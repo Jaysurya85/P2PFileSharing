@@ -4,22 +4,22 @@ import java.io.FileReader;
 import java.io.FileInputStream;
 import java.util.*;
 import java.util.Properties;
-import models.Peer;
+import models.*;
 
 public class ConfigParser {
 
-	public void getCommonConfig() {
+	public Common getCommonConfig() {
 		String configFilePath = "../Common.cfg";
 		Properties props = new Properties();
 		try {
 			FileInputStream fs = new FileInputStream(configFilePath);
 			props.load(fs);
-			String k = props.getProperty("NumberOfPreferredNeighbors");
-			String m = props.getProperty("UnchokingInterval");
-			String n = props.getProperty("OptimisticUnchokingInterval");
+			int k = Integer.parseInt(props.getProperty("NumberOfPreferredNeighbors"));
+			int m = Integer.parseInt(props.getProperty("UnchokingInterval"));
+			int n = Integer.parseInt(props.getProperty("OptimisticUnchokingInterval"));
 			String fileName = props.getProperty("FileName");
-			String fileSize = props.getProperty("FileSize");
-			String pieceSize = props.getProperty("PieceSize");
+			long fileSize = Long.parseLong(props.getProperty("FileSize"));
+			int pieceSize = Integer.parseInt(props.getProperty("PieceSize"));
 
 			System.out.println("k is " + k);
 			System.out.println("m = is " + m);
@@ -28,9 +28,11 @@ public class ConfigParser {
 			System.out.println("fileSize is " + fileSize);
 			System.out.println("pieceSize is " + pieceSize);
 			fs.close();
+			return new Common(k, n, n, fileName, fileSize, pieceSize);
 		} catch (Exception ex) {
 			System.out.println("Error is " + ex.toString());
 		}
+		return new Common();
 	}
 
 	public List<Peer> getPeerConfig() {
