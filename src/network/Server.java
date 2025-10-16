@@ -1,16 +1,19 @@
-import java.net.Socket;
-import java.nio.charset.StandardCharsets;
+package network;
+
+import java.nio.ByteBuffer;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import Messages.BitfieldMessageHandler;
+import Messages.*;
 
 import java.io.*;
 import java.net.*;
 
 import models.HandshakeInfo;
 import models.Peer;
+import utils.MessageUtils;
 
 /*
  * :
@@ -35,33 +38,97 @@ class ClientHandler implements Runnable {
 		this.out = socket.getOutputStream();
 	}
 
+	public void serverMessageHandler(byte type, byte[] payload) throws Exception {
+		switch (type) {
+			case 0:
+				ChokeMessageHandler clientChokeHandler = new ChokeMessageHandler();
+				System.out.println("Client is choking  us " + clientChokeHandler);
+				break;
+
+			case 1:
+				UnChokeMessageHandler clientUnchokeHandler = new UnChokeMessageHandler();
+				System.out.println("Client is un choking us " + clientUnchokeHandler);
+				List<Integer> interestedPeices = peerNode.getInterestedPeices(this.clientHandshakeInfo.getPeerId());
+				if (!interestedPeices.isEmpty()) {
+					MessageUtils.sendRequest(interestedPeices.get(0), out);
+				}
+				break;
+
+			case 2:
+				InterestedMessageHandler clientInterestedMessage = new InterestedMessageHandler();
+				System.out.println("Client is sending interested as " + clientInterestedMessage);
+				this.peerNode.setPeerInterested(this.clientHandshakeInfo.getPeerId());
+				MessageUtils.sendUnChoke(this.out);
+				break;
+
+			case 3:
+				NotInterestedMessageHandler clientNotInterestedMessage = new NotInterestedMessageHandler();
+				System.out.println("Client is sending not interested as " + clientNotInterestedMessage);
+				this.peerNode.setPeerNotInterested(this.clientHandshakeInfo.getPeerId());
+				break;
+			// case 4:
+			// handler = new AudioMessageHandler();
+			// break;
+			case 5:
+				BitfieldMessageHandler clientBitfieldMessage = BitfieldMessageHandler.fromByteArray(payload);
+				System.out.println("Client is sending bitfield as " + clientBitfieldMessage);
+				this.peerNode.setOtherPeerBit(this.clientHandshakeInfo.getPeerId(), clientBitfieldMessage.getPayload());
+				BitfieldMessageHandler bitfieldMessage = new BitfieldMessageHandler(this.peerNode.getBitfield());
+				System.out.println("Server is sending bitfield as " + bitfieldMessage);
+				this.out.write(bitfieldMessage.toByteArray());
+				boolean isInterested = peerNode.setInterestedPeices(this.clientHandshakeInfo.getPeerId(), payload);
+				MessageUtils.sendInterestedOrNot(isInterested, this.out);
+				break;
+
+			case 6:
+				RequestMessageHandler clientRequestMessage = RequestMessageHandler.fromByteArray(payload);
+				System.out.println("Client is sending request as " + clientRequestMessage);
+				int peiceIndex = clientRequestMessage.getPieceIndex();
+				break;
+			// case 7:
+			// handler = new BinaryMessageHandler();
+			// break;
+			// case 8:
+			// handler = new ControlMessageHandler();
+			// break;
+			default:
+				throw new IllegalArgumentException("Unknown message type: " + type);
+		}
+	}
+
+	private void readFully(InputStream in, byte[] buffer, int offset, int length) throws IOException {
+		int read = 0;
+		while (read < length) {
+			int r = in.read(buffer, offset + read, length - read);
+			if (r == -1)
+				throw new EOFException("Stream closed prematurely");
+			read += r;
+		}
+	}
+
 	@Override
 	public void run() {
 		System.out.println(
 				"Client connected from: " + this.socket.getInetAddress().getHostAddress());
 		try {
 
-			byte[] clientBuffer = new byte[1024];
-			int ind;
-			while ((ind = this.in.read(clientBuffer)) != -1) {
-				String inputString = new String(clientBuffer, 0, ind, StandardCharsets.UTF_8).trim();
-				System.out.println("Recieved from client after handshake :" + inputString);
-				BitfieldMessageHandler clientBitfieldMessage = BitfieldMessageHandler.fromByteArray(clientBuffer);
-				System.out.println("Client is sending bitfield as " + clientBitfieldMessage);
-				this.peerNode.setOtherPeerBit(this.clientHandshakeInfo.getPeerId(), clientBitfieldMessage.getPayload());
-				BitfieldMessageHandler bitfieldMessage = new BitfieldMessageHandler(this.peerNode.getBitfield());
-				System.out.println("Server is sending bitfield as " + bitfieldMessage);
-				this.out.write(bitfieldMessage.toByteArray());
-				if (inputString.equals("exit")) {
-					break;
-				}
-				// if (inputString.equals("sendAsClient")) {
-				// System.out.println("recieved sendAsClient");
-				// this.peerNode.sendMessageFromClient();
-				// }
-				// if (inputString.equals("Hello from client")) {
-				// this.out.write("sendAsServer".getBytes());
-				// }
+			while (true) {
+				byte[] lengthBytes = new byte[4];
+				readFully(in, lengthBytes, 0, 4);
+				int length = ByteBuffer.wrap(lengthBytes).getInt();
+
+				byte[] typeBytes = new byte[1];
+				readFully(in, typeBytes, 0, 1);
+
+				byte[] payload = new byte[length - 1];
+				readFully(in, payload, 0, length - 1);
+
+				byte[] fullMessage = new byte[4 + length];
+				System.arraycopy(lengthBytes, 0, fullMessage, 0, 4);
+				fullMessage[4] = typeBytes[0];
+				System.arraycopy(payload, 0, fullMessage, 5, length - 1);
+
+				serverMessageHandler(typeBytes[0], payload);
 			}
 		} catch (Exception ex) {
 			System.out.println("Error in client handler is " + ex);
@@ -152,7 +219,6 @@ public class Server implements Runnable {
 					Thread clientThread = new Thread(clientHandler);
 					clientThread.start();
 				}
-
 			}
 		} catch (Exception ex) {
 			System.out.println("Exception while creating server " + this.peer.getPeerId() + ex);

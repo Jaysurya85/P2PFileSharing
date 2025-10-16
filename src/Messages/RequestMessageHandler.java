@@ -1,20 +1,27 @@
+
 package Messages;
 
 import java.nio.ByteBuffer;
 
-public class BitfieldMessageHandler {
+public class RequestMessageHandler {
 	int length;
 	byte type;
+	int pieceIndex;
 	byte[] payload;
 
-	public BitfieldMessageHandler(byte[] payload) {
-		this.length = payload.length + 1;
-		this.payload = payload;
-		this.type = (byte) 5;
+	public int getPieceIndex() {
+		return pieceIndex;
 	}
 
-	public byte[] getPayload() {
-		return this.payload;
+	public void setPieceIndex(int pieceIndex) {
+		this.pieceIndex = pieceIndex;
+	}
+
+	public RequestMessageHandler(int pieceIndex) {
+		this.length = 5;
+		this.pieceIndex = pieceIndex;
+		this.type = (byte) 6;
+		this.payload = ByteBuffer.allocate(4).putInt(pieceIndex).array();
 	}
 
 	public int getMessageLength() {
@@ -31,10 +38,9 @@ public class BitfieldMessageHandler {
 		return buffer.array();
 	}
 
-	public static BitfieldMessageHandler fromByteArray(byte[] payload) {
-		System.out.println("inside BitfieldMessageHandler");
-
-		return new BitfieldMessageHandler(payload);
+	public static RequestMessageHandler fromByteArray(byte[] payload) {
+		int pieceIndex = ByteBuffer.wrap(payload).getInt();
+		return new RequestMessageHandler(pieceIndex);
 	}
 
 	@Override
@@ -46,6 +52,7 @@ public class BitfieldMessageHandler {
 		return "Message{" +
 				"length=" + this.length +
 				", type=" + this.type +
+				", peiceInd=" + this.pieceIndex +
 				", payload=" + payloadStr +
 				"}";
 	}

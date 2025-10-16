@@ -1,3 +1,5 @@
+package Messages;
+
 import models.HandshakeInfo;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;

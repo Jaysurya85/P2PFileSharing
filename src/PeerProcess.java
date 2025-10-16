@@ -2,6 +2,8 @@ import java.util.List;
 
 import models.Common;
 import models.Peer;
+import network.PeerNode;
+import utils.ConfigParser;
 
 public class PeerProcess {
 	private Peer peer;
