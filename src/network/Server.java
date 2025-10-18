@@ -48,9 +48,12 @@ class ClientHandler implements Runnable {
 			case 1:
 				UnChokeMessageHandler clientUnchokeHandler = new UnChokeMessageHandler();
 				System.out.println("Client is un choking us " + clientUnchokeHandler);
-				List<Integer> interestedPeices = peerNode.getInterestedPeices(this.clientHandshakeInfo.getPeerId());
-				if (!interestedPeices.isEmpty()) {
-					MessageUtils.sendRequest(interestedPeices.get(0), out);
+				List<Integer> interestedPieces = peerNode.getInterestedPieces(this.clientHandshakeInfo.getPeerId());
+				if (!interestedPieces.isEmpty()) {
+					MessageUtils.sendRequest(interestedPieces.get(interestedPieces.size() - 1), out);
+				} else {
+
+					System.out.println("No piece to request");
 				}
 				break;
 
@@ -66,31 +69,42 @@ class ClientHandler implements Runnable {
 				System.out.println("Client is sending not interested as " + clientNotInterestedMessage);
 				this.peerNode.setPeerNotInterested(this.clientHandshakeInfo.getPeerId());
 				break;
-			// case 4:
-			// handler = new AudioMessageHandler();
-			// break;
+
+			case 4:
+				HaveMessageHandler clientHaveMessage = HaveMessageHandler.fromByteArray(payload);
+				System.out.println("Client is sending have message as " + clientHaveMessage);
+				this.peerNode.setOtherPeerBit(this.clientHandshakeInfo.getPeerId(), clientHaveMessage.getPieceIndex());
+				break;
+
 			case 5:
 				BitfieldMessageHandler clientBitfieldMessage = BitfieldMessageHandler.fromByteArray(payload);
 				System.out.println("Client is sending bitfield as " + clientBitfieldMessage);
-				this.peerNode.setOtherPeerBit(this.clientHandshakeInfo.getPeerId(), clientBitfieldMessage.getPayload());
+				this.peerNode.setOtherPeerBitfield(this.clientHandshakeInfo.getPeerId(),
+						clientBitfieldMessage.getPayload());
 				BitfieldMessageHandler bitfieldMessage = new BitfieldMessageHandler(this.peerNode.getBitfield());
 				System.out.println("Server is sending bitfield as " + bitfieldMessage);
 				this.out.write(bitfieldMessage.toByteArray());
-				boolean isInterested = peerNode.setInterestedPeices(this.clientHandshakeInfo.getPeerId(), payload);
+				boolean isInterested = peerNode.setInterestedPieces(this.clientHandshakeInfo.getPeerId(), payload);
 				MessageUtils.sendInterestedOrNot(isInterested, this.out);
 				break;
 
 			case 6:
 				RequestMessageHandler clientRequestMessage = RequestMessageHandler.fromByteArray(payload);
 				System.out.println("Client is sending request as " + clientRequestMessage);
-				int peiceIndex = clientRequestMessage.getPieceIndex();
+				int pieceIndex = clientRequestMessage.getPieceIndex();
+				MessageUtils.sendPiece(pieceIndex, this.out);
 				break;
-			// case 7:
-			// handler = new BinaryMessageHandler();
-			// break;
-			// case 8:
-			// handler = new ControlMessageHandler();
-			// break;
+
+			case 7:
+				PieceMessageHandler clientPieceMessage = PieceMessageHandler.fromByteArray(payload);
+				System.out.println("Client is sending piece as " + clientPieceMessage);
+				this.peerNode.setBit(this.clientHandshakeInfo.getPeerId(), clientPieceMessage.getPieceIndex());
+				HaveMessageHandler haveMessage = new HaveMessageHandler(clientPieceMessage.getPieceIndex());
+				byte[] havePayload = haveMessage.toByteArray();
+				this.peerNode.broadcastToClients(havePayload);
+				this.peerNode.braodcastToServers(havePayload);
+				break;
+
 			default:
 				throw new IllegalArgumentException("Unknown message type: " + type);
 		}
@@ -165,10 +179,10 @@ class ClientHandler implements Runnable {
 
 	}
 
-	public void sendMessageTesting() {
+	public void sendHaveMessage(byte[] byteArray) {
 		try {
-			System.out.println("Sending as server to client peer " + this.clientHandshakeInfo.getPeerId());
-			this.out.write("Hello from server".getBytes());
+			System.out.println("Sending to client peer " + this.clientHandshakeInfo.getPeerId());
+			this.out.write(byteArray);
 		} catch (Exception ex) {
 			System.out.println("Error occured while testing to send message from server to client");
 		}
@@ -191,12 +205,12 @@ public class Server implements Runnable {
 		this.clientHandlers = new HashMap<>();
 	}
 
-	public void serverSendMessageAsTesting() {
+	public void broadcastingToMyClients(byte[] byteArray) {
 		System.out.println("peer in server client message is " + this.peer.getPeerId());
 		if (!this.clientHandlers.isEmpty()) {
 			for (Map.Entry<Integer, ClientHandler> entry : clientHandlers.entrySet()) {
 				ClientHandler clientHandler = entry.getValue();
-				clientHandler.sendMessageTesting();
+				clientHandler.sendHaveMessage(byteArray);
 			}
 		}
 	}

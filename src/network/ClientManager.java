@@ -36,9 +36,12 @@ class ClientListener implements Runnable {
 			case 1:
 				UnChokeMessageHandler serverUnchokeHandler = new UnChokeMessageHandler();
 				System.out.println("Server is un choking us " + serverUnchokeHandler);
-				List<Integer> interestedPeices = peerNode.getInterestedPeices(serverPeerId);
+				List<Integer> interestedPeices = peerNode.getInterestedPieces(serverPeerId);
 				if (!interestedPeices.isEmpty()) {
 					MessageUtils.sendRequest(interestedPeices.get(0), out);
+				} else {
+
+					System.out.println("No peice to request");
 				}
 				break;
 
@@ -55,28 +58,37 @@ class ClientListener implements Runnable {
 				this.peerNode.setPeerNotInterested(serverPeerId);
 				break;
 
-			// handler = new VideoMessageHandler();
-			// break;
-			// case 4:
-			// handler = new AudioMessageHandler();
-			// break;
+			case 4:
+				HaveMessageHandler serverHaveMessage = HaveMessageHandler.fromByteArray(payload);
+				System.out.println("Server is sending have message as " + serverHaveMessage);
+				this.peerNode.setOtherPeerBit(serverPeerId, serverHaveMessage.getPieceIndex());
+				break;
+
 			case 5:
 				BitfieldMessageHandler serverBitfieldMessage = BitfieldMessageHandler.fromByteArray(payload);
 				System.out.println("Server is sending bitfield as " + serverBitfieldMessage);
-				this.peerNode.setOtherPeerBit(serverPeerId, serverBitfieldMessage.getPayload());
-				boolean isInterested = peerNode.setInterestedPeices(serverPeerId, payload);
+				this.peerNode.setOtherPeerBitfield(serverPeerId, serverBitfieldMessage.getPayload());
+				boolean isInterested = peerNode.setInterestedPieces(serverPeerId, payload);
 				MessageUtils.sendInterestedOrNot(isInterested, this.out);
 				break;
 
-			// case 6:
-			// handler = new XmlMessageHandler();
-			// break;
-			// case 7:
-			// handler = new BinaryMessageHandler();
-			// break;
-			// case 8:
-			// handler = new ControlMessageHandler();
-			// break;
+			case 6:
+				RequestMessageHandler clientRequestMessage = RequestMessageHandler.fromByteArray(payload);
+				System.out.println("Server is sending request as " + clientRequestMessage);
+				int pieceIndex = clientRequestMessage.getPieceIndex();
+				MessageUtils.sendPiece(pieceIndex, this.out);
+				break;
+
+			case 7:
+				PieceMessageHandler clientPieceMessage = PieceMessageHandler.fromByteArray(payload);
+				System.out.println("Server is sending request as " + clientPieceMessage);
+				this.peerNode.setBit(serverPeerId, clientPieceMessage.getPieceIndex());
+				HaveMessageHandler haveMessage = new HaveMessageHandler(clientPieceMessage.getPieceIndex());
+				byte[] havePayload = haveMessage.toByteArray();
+				this.peerNode.broadcastToClients(havePayload);
+				this.peerNode.braodcastToServers(havePayload);
+				break;
+
 			default:
 				throw new IllegalArgumentException("Unknown message type: " + type);
 		}
@@ -136,22 +148,6 @@ public class ClientManager {
 
 	}
 
-	// public void clientSendMessageAsTesting() {
-	// for (Map.Entry<Integer, Socket> entry : connections.entrySet()) {
-	// Socket socket = entry.getValue();
-	// int serverPeerId = entry.getKey();
-	// System.out.println("Sending message to server " + serverPeerId);
-	// try {
-	//
-	// OutputStream out = socket.getOutputStream();
-	// out.write("Hello from client".getBytes());
-	// } catch (Exception ex) {
-	// System.out.println("Error while sending message to servers i am connected ex:
-	// " + ex.toString());
-	// }
-	// }
-	// }
-
 	public boolean doHandshake(InputStream in, OutputStream out) throws Exception {
 
 		HandshakeMessage message = new HandshakeMessage();
@@ -163,6 +159,20 @@ public class ClientManager {
 		this.serverHandshakeInfo = message.parseHandshake(serverHandshakeBuffer);
 		boolean isHandshakeDone = message.verifyHeader(this.serverHandshakeInfo.getHeader());
 		return isHandshakeDone;
+	}
+
+	public void broadcastToServers(byte[] havePayload) {
+		for (HashMap.Entry<Integer, Socket> ep : connections.entrySet()) {
+			Socket socket = ep.getValue();
+			System.out.println("Sending have messages to server " + ep.getKey());
+			try {
+				OutputStream out = socket.getOutputStream();
+				out.write(havePayload);
+			} catch (Exception ex) {
+				System.out.println("Error while sending have message to server " + ep.getKey() + " and the error is "
+						+ ex.toString());
+			}
+		}
 	}
 
 	private void sendBitfield(OutputStream out) throws Exception {

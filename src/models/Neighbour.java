@@ -4,13 +4,13 @@ import java.util.List;
 
 public class Neighbour {
 	private byte[] bitfield;
-	private boolean isInterested;
+	private boolean isInterestedInMe;
 	private int peerId;
-	private List<Integer> interestedPeices;
+	private List<Integer> interestingPieces;
 
 	public Neighbour(byte[] bitfield, int peerId) {
 		this.bitfield = bitfield;
-		this.isInterested = false;
+		this.isInterestedInMe = false;
 		this.peerId = peerId;
 
 	}
@@ -19,16 +19,16 @@ public class Neighbour {
 		return bitfield;
 	}
 
-	public boolean isInterested() {
-		return isInterested;
+	public boolean isInterestedInMe() {
+		return isInterestedInMe;
 	}
 
 	public int getPeerId() {
 		return peerId;
 	}
 
-	public void setInterested(boolean isInterested) {
-		this.isInterested = isInterested;
+	public void setInterestedInMe(boolean isInterestedInMe) {
+		this.isInterestedInMe = isInterestedInMe;
 	}
 
 	public void setBitfield(byte[] bitfield) {
@@ -39,12 +39,20 @@ public class Neighbour {
 		this.peerId = peerId;
 	}
 
-	public List<Integer> getInterestedPeices() {
-		return interestedPeices;
+	public List<Integer> getInterestingPieces() {
+		return interestingPieces;
 	}
 
-	public void setInterestedPeices(List<Integer> interestedPeices) {
-		this.interestedPeices = interestedPeices;
+	public void addInterestingPieces(int pieceIndex) {
+		interestingPieces.add(pieceIndex);
+	}
+
+	public void removeInterestingPieces(int pieceIndex) {
+		interestingPieces.remove(pieceIndex);
+	}
+
+	public void setInterestingPieces(List<Integer> interestingPieces) {
+		this.interestingPieces = interestingPieces;
 	}
 
 }

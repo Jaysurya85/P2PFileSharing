@@ -27,6 +27,16 @@ public class MessageUtils {
 		out.write(unChoke.toByteArray());
 	}
 
-	public static void sendRequest(Integer peice, OutputStream out) throws Exception {
+	public static void sendRequest(Integer pieceIndex, OutputStream out) throws Exception {
+		RequestMessageHandler request = new RequestMessageHandler(pieceIndex);
+		out.write(request.toByteArray());
+	}
+
+	public static void sendPiece(Integer pieceIndex, OutputStream out) throws Exception {
+		byte[] dummyPiece = ("DummyDataForPiece" + pieceIndex).getBytes();
+		PieceMessageHandler pieceMsg = new PieceMessageHandler(pieceIndex, dummyPiece);
+		out.write(pieceMsg.toByteArray());
+		out.flush();
+		System.out.println("Sent dummy PIECE for pieceIndex " + pieceIndex);
 	}
 }
