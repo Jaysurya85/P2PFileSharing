@@ -22,7 +22,7 @@ public class HaveMessageHandler {
 	}
 
 	public static HaveMessageHandler fromByteArray(byte[] messageBytes) {
-		ByteBuffer buffer = ByteBuffer.wrap(messageBytes, 5, 4);
+		ByteBuffer buffer = ByteBuffer.wrap(messageBytes, 0, 4);
 		int pieceIndex = buffer.getInt();
 		return new HaveMessageHandler(pieceIndex);
 	}

@@ -206,7 +206,7 @@ public class Server implements Runnable {
 	}
 
 	public void broadcastingToMyClients(byte[] byteArray) {
-		System.out.println("peer in server client message is " + this.peer.getPeerId());
+		System.out.println("Server peer sending to client message is " + this.peer.getPeerId());
 		if (!this.clientHandlers.isEmpty()) {
 			for (Map.Entry<Integer, ClientHandler> entry : clientHandlers.entrySet()) {
 				ClientHandler clientHandler = entry.getValue();

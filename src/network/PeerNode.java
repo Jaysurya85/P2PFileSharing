@@ -114,7 +114,7 @@ public class PeerNode {
 			}
 		}
 		this.otherPeerBitfield.get(peerId).setInterestingPieces(interestedPieces);
-		return interestedPieces.isEmpty();
+		return !interestedPieces.isEmpty();
 	}
 
 	public List<Integer> getInterestedPieces(int peerId) {
@@ -131,5 +131,9 @@ public class PeerNode {
 
 	public byte[] getBitfield() {
 		return this.bitfield;
+	}
+
+	public byte[] getOtherBitfield(int peerId) {
+		return this.otherPeerBitfield.get(peerId).getBitfield();
 	}
 }

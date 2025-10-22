@@ -1,6 +1,7 @@
 package Messages;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class PieceMessageHandler {
@@ -45,7 +46,7 @@ public class PieceMessageHandler {
 	}
 
 	public byte[] getPieceData() {
-		return Arrays.copyOfRange(payload, 4, payload.length);
+		return Arrays.copyOfRange(this.payload, 4, this.payload.length);
 	}
 
 	@Override
@@ -53,7 +54,7 @@ public class PieceMessageHandler {
 		return "PieceMessage{length=" + length +
 				", type=" + type +
 				", pieceIndex=" + getPieceIndex() +
-				"payload is= " + getPieceData() +
+				"payload is= " + new String(getPieceData(), StandardCharsets.UTF_8) +
 				", dataSize=" + getPieceData().length + "}";
 	}
 }

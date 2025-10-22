@@ -62,6 +62,12 @@ class ClientListener implements Runnable {
 				HaveMessageHandler serverHaveMessage = HaveMessageHandler.fromByteArray(payload);
 				System.out.println("Server is sending have message as " + serverHaveMessage);
 				this.peerNode.setOtherPeerBit(serverPeerId, serverHaveMessage.getPieceIndex());
+				byte[] serverBitfield = this.peerNode.getOtherBitfield(serverPeerId);
+				String payloadStr = "";
+				for (byte b : serverBitfield) {
+					payloadStr += String.format("%8s", Integer.toBinaryString(b & 0xFF)).replace(' ', '0');
+				}
+				System.out.println(payloadStr);
 				break;
 
 			case 5:
@@ -81,7 +87,7 @@ class ClientListener implements Runnable {
 
 			case 7:
 				PieceMessageHandler clientPieceMessage = PieceMessageHandler.fromByteArray(payload);
-				System.out.println("Server is sending request as " + clientPieceMessage);
+				System.out.println("Server is sending peice as " + clientPieceMessage);
 				this.peerNode.setBit(serverPeerId, clientPieceMessage.getPieceIndex());
 				HaveMessageHandler haveMessage = new HaveMessageHandler(clientPieceMessage.getPieceIndex());
 				byte[] havePayload = haveMessage.toByteArray();

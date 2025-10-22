@@ -33,7 +33,7 @@ public class MessageUtils {
 	}
 
 	public static void sendPiece(Integer pieceIndex, OutputStream out) throws Exception {
-		byte[] dummyPiece = ("DummyDataForPiece" + pieceIndex).getBytes();
+		byte[] dummyPiece = "DummyDataForPiece".getBytes();
 		PieceMessageHandler pieceMsg = new PieceMessageHandler(pieceIndex, dummyPiece);
 		out.write(pieceMsg.toByteArray());
 		out.flush();
