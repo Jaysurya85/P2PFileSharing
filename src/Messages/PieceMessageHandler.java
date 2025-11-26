@@ -1,7 +1,6 @@
 package Messages;
 
 import java.nio.ByteBuffer;
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
 public class PieceMessageHandler {
@@ -54,7 +53,6 @@ public class PieceMessageHandler {
 		return "PieceMessage{length=" + length +
 				", type=" + type +
 				", pieceIndex=" + getPieceIndex() +
-				"payload is= " + new String(getPieceData(), StandardCharsets.UTF_8) +
 				", dataSize=" + getPieceData().length + "}";
 	}
 }

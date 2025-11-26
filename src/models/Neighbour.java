@@ -1,5 +1,7 @@
 package models;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public class Neighbour {
@@ -12,6 +14,7 @@ public class Neighbour {
 		this.bitfield = bitfield;
 		this.isInterestedInMe = false;
 		this.peerId = peerId;
+		this.interestingPieces = Collections.synchronizedList(new ArrayList<>());
 
 	}
 
@@ -52,7 +55,7 @@ public class Neighbour {
 	}
 
 	public void setInterestingPieces(List<Integer> interestingPieces) {
-		this.interestingPieces = interestingPieces;
+		this.interestingPieces = Collections.synchronizedList(new ArrayList<>(interestingPieces));
 	}
 
 }

@@ -4,6 +4,7 @@ import models.Common;
 import models.Peer;
 import network.PeerNode;
 import utils.ConfigParser;
+import utils.FileManager;
 
 public class PeerProcess {
 	private Peer peer;
@@ -19,7 +20,7 @@ public class PeerProcess {
 	public static void main(String[] args) {
 		ConfigParser cp = new ConfigParser();
 		Common commonConfig = cp.getCommonConfig();
-		int bytefieldLength = (int) (commonConfig.getFileSize() / (long) commonConfig.getPieceSize());
+		int noOfPieces = (int) Math.ceilDiv(commonConfig.getFileSize(), (long) commonConfig.getPieceSize());
 		List<Peer> peers = cp.getPeerConfig();
 		int selfPeerId = Integer.parseInt(args[0]);
 		Peer selfPeer = peers.stream()
@@ -27,8 +28,11 @@ public class PeerProcess {
 				.findFirst()
 				.orElseThrow(() -> new RuntimeException("Peer ID not found"));
 
+		FileManager fileManager = new FileManager(selfPeerId, commonConfig.getFileName(), commonConfig.getFileSize(),
+				commonConfig.getPieceSize(), noOfPieces);
+
 		// Start server thread
-		PeerNode peerNode = new PeerNode(selfPeer, bytefieldLength);
+		PeerNode peerNode = new PeerNode(selfPeer, fileManager, noOfPieces);
 		peerNode.startServer();
 		System.out.println("Peer " + selfPeerId + " starts as a server");
 

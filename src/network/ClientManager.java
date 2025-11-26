@@ -11,6 +11,7 @@ import java.io.*;
 
 import models.HandshakeInfo;
 import models.Peer;
+import utils.FileManager;
 import utils.MessageUtils;
 
 class ClientListener implements Runnable {
@@ -36,11 +37,10 @@ class ClientListener implements Runnable {
 			case 1:
 				UnChokeMessageHandler serverUnchokeHandler = new UnChokeMessageHandler();
 				System.out.println("Server is un choking us " + serverUnchokeHandler);
-				List<Integer> interestedPeices = peerNode.getInterestedPieces(serverPeerId);
-				if (!interestedPeices.isEmpty()) {
-					MessageUtils.sendRequest(interestedPeices.get(0), out);
+				int interestedPiece = peerNode.getInterestedPiece(this.serverPeerId);
+				if (interestedPiece >= 0) {
+					MessageUtils.sendRequest(interestedPiece, out);
 				} else {
-
 					System.out.println("No peice to request");
 				}
 				break;
@@ -48,21 +48,21 @@ class ClientListener implements Runnable {
 			case 2:
 				InterestedMessageHandler serverInterestedMessage = new InterestedMessageHandler();
 				System.out.println("Server is sending interested as " + serverInterestedMessage);
-				this.peerNode.setPeerInterested(serverPeerId);
+				this.peerNode.setPeerInterested(this.serverPeerId);
 				MessageUtils.sendUnChoke(this.out);
 				break;
 
 			case 3:
 				NotInterestedMessageHandler serverNotInterestedMessage = new NotInterestedMessageHandler();
 				System.out.println("Server is sending not interested as " + serverNotInterestedMessage);
-				this.peerNode.setPeerNotInterested(serverPeerId);
+				this.peerNode.setPeerNotInterested(this.serverPeerId);
 				break;
 
 			case 4:
 				HaveMessageHandler serverHaveMessage = HaveMessageHandler.fromByteArray(payload);
 				System.out.println("Server is sending have message as " + serverHaveMessage);
-				this.peerNode.setOtherPeerBit(serverPeerId, serverHaveMessage.getPieceIndex());
-				byte[] serverBitfield = this.peerNode.getOtherBitfield(serverPeerId);
+				this.peerNode.setOtherPeerBit(this.serverPeerId, serverHaveMessage.getPieceIndex());
+				byte[] serverBitfield = this.peerNode.getOtherBitfield(this.serverPeerId);
 				String payloadStr = "";
 				for (byte b : serverBitfield) {
 					payloadStr += String.format("%8s", Integer.toBinaryString(b & 0xFF)).replace(' ', '0');
@@ -74,25 +74,43 @@ class ClientListener implements Runnable {
 				BitfieldMessageHandler serverBitfieldMessage = BitfieldMessageHandler.fromByteArray(payload);
 				System.out.println("Server is sending bitfield as " + serverBitfieldMessage);
 				this.peerNode.setOtherPeerBitfield(serverPeerId, serverBitfieldMessage.getPayload());
-				boolean isInterested = peerNode.setInterestedPieces(serverPeerId, payload);
+				boolean isInterested = this.peerNode.setInterestedPieces(serverPeerId, payload);
 				MessageUtils.sendInterestedOrNot(isInterested, this.out);
 				break;
 
 			case 6:
-				RequestMessageHandler clientRequestMessage = RequestMessageHandler.fromByteArray(payload);
-				System.out.println("Server is sending request as " + clientRequestMessage);
-				int pieceIndex = clientRequestMessage.getPieceIndex();
-				MessageUtils.sendPiece(pieceIndex, this.out);
+				RequestMessageHandler serverRequestMessage = RequestMessageHandler.fromByteArray(payload);
+				System.out.println("Server is sending request as " + serverRequestMessage);
+				int pieceIndex = serverRequestMessage.getPieceIndex();
+				FileManager fm = this.peerNode.getFileManager();
+				byte[] piece = fm.getPiece(pieceIndex);
+				MessageUtils.sendPiece(pieceIndex, piece, this.out);
 				break;
 
 			case 7:
 				PieceMessageHandler clientPieceMessage = PieceMessageHandler.fromByteArray(payload);
 				System.out.println("Server is sending peice as " + clientPieceMessage);
-				this.peerNode.setBit(serverPeerId, clientPieceMessage.getPieceIndex());
-				HaveMessageHandler haveMessage = new HaveMessageHandler(clientPieceMessage.getPieceIndex());
+				pieceIndex = clientPieceMessage.getPieceIndex();
+				byte[] pieceData = clientPieceMessage.getPieceData();
+
+				// saving the piece
+				fm = this.peerNode.getFileManager();
+				fm.setPeice(pieceIndex, pieceData);
+				this.peerNode.setBit(serverPeerId, pieceIndex);
+				HaveMessageHandler haveMessage = new HaveMessageHandler(pieceIndex);
 				byte[] havePayload = haveMessage.toByteArray();
+
+				// Send the have messages to all connected peer
 				this.peerNode.broadcastToClients(havePayload);
 				this.peerNode.braodcastToServers(havePayload);
+
+				// Request the next piece
+				interestedPiece = peerNode.getInterestedPiece(serverPeerId);
+				if (interestedPiece >= 0) {
+					MessageUtils.sendRequest(interestedPiece, out);
+				} else {
+					System.out.println("No peice to request");
+				}
 				break;
 
 			default:

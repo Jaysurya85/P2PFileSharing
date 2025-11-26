@@ -1,6 +1,26 @@
 
 # Peer-to-Peer File Sharing System
 
+
+## Project Structure
+
+-   All **source code** files are located in the `src/` directory.
+    
+-   The **Makefile** is configured so that all compiled `.class` files are placed in the `build/` folder.
+    
+-   The `build/` directory should be created automatically during compilation.
+
+```
+project_root/
+├── src/                 # Java source files 
+├── build/               # Compiled .class files (created after build) 
+├── Makefile             # Build and run configuration 
+├── Common.cfg           # Common configuration file 
+└── PeerInfo.cfg         # Peer information file
+```
+
+----------
+
 ## Commands to Build and Run the Code
 
 ### Without Make
@@ -49,3 +69,5 @@ PieceSize  16384
 ## Environment
 
 All testing has been performed in a **local environment** using `localhost` as the hostname.
+All the source code is in src. And the makefile configurations are such that .class files should be in a build folder.
+

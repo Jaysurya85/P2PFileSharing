@@ -2,6 +2,8 @@ package network;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,7 +31,7 @@ public class PeerNode {
 		this.fileManager = fileManager;
 		this.server = new Server(this);
 		this.clientManager = new ClientManager(this);
-		this.requestedPeices = ConcurrentHashMap.newKeySet();
+		this.requestedPeices = new HashSet<>();
 		this.pieceLock = new Object();
 		this.bitfieldLock = new Object();
 		this.bitfield = new byte[bytefieldLength];
@@ -56,13 +58,12 @@ public class PeerNode {
 	}
 
 	public void setOtherPeerBitfield(int peerId, byte[] otherPeerBitfield) {
-		synchronized (bitfieldLock) {
-			this.otherPeerBitfield.put(peerId, new Neighbour(otherPeerBitfield, peerId));
-		}
+		this.otherPeerBitfield.put(peerId, new Neighbour(otherPeerBitfield, peerId));
 	}
 
 	public void setBit(int peerId, int pieceIndex) {
 		synchronized (bitfieldLock) {
+
 			int byteIndex = pieceIndex / 8;
 			int bitIndex = 7 - pieceIndex % 8;
 			byte val = this.bitfield[byteIndex];
@@ -74,25 +75,31 @@ public class PeerNode {
 	}
 
 	public void setOtherPeerBit(int peerId, int pieceIndex) {
-		Neighbour neighbour = this.otherPeerBitfield.getOrDefault(peerId, null);
-		if (neighbour == null)
-			return;
-		synchronized (bitfieldLock) {
-			byte[] bitfield = neighbour.getBitfield();
-			int byteIndex = pieceIndex / 8;
-			int bitIndex = 7 - pieceIndex % 8;
-			byte val = bitfield[byteIndex];
+		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+		byte[] bitfield = neighbour.getBitfield();
+		int byteIndex = pieceIndex / 8;
+		int bitIndex = 7 - pieceIndex % 8;
+		byte val = bitfield[byteIndex];
 
-			byte mask = (byte) (1 << bitIndex);
-			boolean alreadySet = (val & mask) != 0;
-			if (alreadySet) {
-				return;
-			}
-			val = (byte) (val | mask);
-			bitfield[byteIndex] = val;
-			neighbour.setBitfield(bitfield);
+		byte mask = (byte) (1 << bitIndex);
+		boolean alreadySet = (val & mask) != 0;
+		if (alreadySet) {
+			return;
 		}
+		val = (byte) (val | mask);
+		bitfield[byteIndex] = val;
+		neighbour.setBitfield(bitfield);
 		addInterestedPieces(peerId, pieceIndex);
+	}
+
+	private void addInterestedPieces(int peerId, int pieceIndex) {
+		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+		neighbour.addInterestingPieces(pieceIndex);
+	}
+
+	private void removeInterestedPieces(int peerId, int pieceIndex) {
+		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+		neighbour.removeInterestingPieces(pieceIndex);
 	}
 
 	public void braodcastToServers(byte[] payload) {
@@ -118,23 +125,19 @@ public class PeerNode {
 
 	public boolean setInterestedPieces(int peerId, byte[] payload) {
 		List<Integer> interestedPieces = new ArrayList<>();
-		synchronized (bitfieldLock) {
-			for (int i = 0; i < bitfield.length; i++) {
-				byte mine = this.bitfield[i];
-				byte theirs = payload[i];
-				for (int bit = 7; bit >= 0; bit--) {
-					int myBit = (mine >> bit) & 1;
-					int theirBit = (theirs >> bit) & 1;
-					if (myBit == 0 && theirBit == 1) {
-						int pieceIndex = i * 8 + (7 - bit);
-						interestedPieces.add(pieceIndex);
-					}
+		for (int i = 0; i < bitfield.length; i++) {
+			byte mine = this.bitfield[i];
+			byte theirs = payload[i];
+			for (int bit = 7; bit >= 0; bit--) {
+				int myBit = (mine >> bit) & 1;
+				int theirBit = (theirs >> bit) & 1;
+				if (myBit == 0 && theirBit == 1) {
+					int pieceIndex = i * 8 + (7 - bit);
+					interestedPieces.add(pieceIndex);
 				}
 			}
 		}
-		synchronized (pieceLock) {
-			this.otherPeerBitfield.get(peerId).setInterestingPieces(interestedPieces);
-		}
+		this.otherPeerBitfield.get(peerId).setInterestingPieces(interestedPieces);
 		return !interestedPieces.isEmpty();
 	}
 
@@ -186,32 +189,16 @@ public class PeerNode {
 		this.requestedPeices = requestedPeices;
 	}
 
-	private void addInterestedPieces(int peerId, int pieceIndex) {
-		synchronized (pieceLock) {
-			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
-			neighbour.addInterestingPieces(pieceIndex);
-		}
-	}
-
-	private void removeInterestedPieces(int peerId, int pieceIndex) {
-		synchronized (pieceLock) {
-			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
-			neighbour.removeInterestingPieces(pieceIndex);
-		}
-	}
-
 	private void fillBitfield(int noOfPieces) {
-		synchronized (bitfieldLock) {
-			int fullBytes = noOfPieces / 8;
-			Arrays.fill(this.bitfield, (byte) 0xFF);
-			int remainder = noOfPieces % 8;
-			if (remainder != 0) {
-				byte lastByte = 0;
-				for (int i = 0; i < remainder; i++) {
-					lastByte |= (1 << (7 - i));
-				}
-				bitfield[fullBytes] = lastByte;
+		int fullBytes = noOfPieces / 8;
+		Arrays.fill(this.bitfield, (byte) 0xFF);
+		int remainder = noOfPieces % 8;
+		if (remainder != 0) {
+			byte lastByte = 0;
+			for (int i = 0; i < remainder; i++) {
+				lastByte |= (1 << (7 - i));
 			}
+			bitfield[fullBytes] = lastByte;
 		}
 	}
 }
