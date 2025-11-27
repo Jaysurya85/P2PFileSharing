@@ -2,8 +2,8 @@ package models;
 
 public class Common {
 
-	int k;
-	int m;
+	int unChockingInterval;
+	int noOfPreferredNeighbours;
 	int n;
 	String fileName;
 	long fileSize;
@@ -13,21 +13,22 @@ public class Common {
 
 	}
 
-	public Common(int k, int m, int n, String fileName, long fileSize, int pieceSize) {
-		this.k = k;
-		this.m = m;
+	public Common(int noOfPreferredNeighbours, int unChockingInterval, int n, String fileName, long fileSize,
+			int pieceSize) {
+		this.noOfPreferredNeighbours = noOfPreferredNeighbours;
+		this.unChockingInterval = unChockingInterval;
 		this.n = n;
 		this.fileName = fileName;
 		this.fileSize = fileSize;
 		this.pieceSize = pieceSize;
 	}
 
-	public int getK() {
-		return this.k;
+	public int getUnChockingInterval() {
+		return this.unChockingInterval;
 	}
 
-	public int getM() {
-		return this.m;
+	public int getNoOfPreferredNeighbours() {
+		return this.noOfPreferredNeighbours;
 	}
 
 	public int getN() {

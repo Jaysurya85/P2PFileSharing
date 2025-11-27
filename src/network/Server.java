@@ -61,7 +61,7 @@ class ClientHandler implements Runnable {
 				InterestedMessageHandler clientInterestedMessage = new InterestedMessageHandler();
 				System.out.println("Client is sending interested as " + clientInterestedMessage);
 				this.peerNode.setPeerInterested(this.clientHandshakeInfo.getPeerId());
-				MessageUtils.sendUnChoke(this.out);
+				// MessageUtils.sendUnChoke(this.out);
 				break;
 
 			case 3:
@@ -210,10 +210,6 @@ class ClientHandler implements Runnable {
 
 }
 
-/*
- * server (selfClientinfo, selfServerINfo, clientsOfMine)
- */
-
 public class Server implements Runnable {
 	PeerNode peerNode;
 	Peer peer;
@@ -235,6 +231,34 @@ public class Server implements Runnable {
 		}
 	}
 
+	public void sendChokeToClient(int peerId) {
+		ClientHandler handler = clientHandlers.get(peerId);
+		if (handler != null) {
+			try {
+				MessageUtils.sendChoke(handler.out);
+				System.out.println("[SERVER] Sent CHOKE to client peer " + peerId);
+			} catch (Exception ex) {
+				System.out.println("[SERVER] Error sending CHOKE to client " + peerId + ": " + ex);
+			}
+		} else {
+			System.out.println("[SERVER] Cannot send CHOKE to " + peerId + " - not connected as client");
+		}
+	}
+
+	public void sendUnchokeToClient(int peerId) {
+		ClientHandler handler = clientHandlers.get(peerId);
+		if (handler != null) {
+			try {
+				MessageUtils.sendUnChoke(handler.out);
+				System.out.println("[SERVER] Sent UNCHOKE to client peer " + peerId);
+			} catch (Exception ex) {
+				System.out.println("[SERVER] Error sending UNCHOKE to client " + peerId + ": " + ex);
+			}
+		} else {
+			System.out.println("[SERVER] Cannot send UNCHOKE to " + peerId + " - not connected as client");
+		}
+	}
+
 	@Override
 	public void run() {
 
@@ -250,6 +274,7 @@ public class Server implements Runnable {
 				Optional<Integer> clientPeerId = clientHandler.doHandshake();
 				if (clientPeerId.isPresent()) {
 					this.clientHandlers.put(clientPeerId.get(), clientHandler);
+					this.peerNode.addClient(clientPeerId.get());
 					Thread clientThread = new Thread(clientHandler);
 					clientThread.start();
 				}

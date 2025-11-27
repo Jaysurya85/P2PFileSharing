@@ -49,7 +49,7 @@ class ClientListener implements Runnable {
 				InterestedMessageHandler serverInterestedMessage = new InterestedMessageHandler();
 				System.out.println("Server is sending interested as " + serverInterestedMessage);
 				this.peerNode.setPeerInterested(this.serverPeerId);
-				MessageUtils.sendUnChoke(this.out);
+				// MessageUtils.sendUnChoke(this.out);
 				break;
 
 			case 3:
@@ -196,6 +196,36 @@ public class ClientManager {
 				System.out.println("Error while sending have message to server " + ep.getKey() + " and the error is "
 						+ ex.toString());
 			}
+		}
+	}
+
+	public void sendChoke(int peerId) {
+		Socket socket = connections.get(peerId);
+		if (socket != null && !socket.isClosed()) {
+			try {
+				OutputStream out = socket.getOutputStream();
+				MessageUtils.sendChoke(out);
+				System.out.println("[CLIENT] Sent CHOKE to server peer " + peerId);
+			} catch (Exception ex) {
+				System.out.println("[CLIENT] Error sending CHOKE to server " + peerId + ": " + ex);
+			}
+		} else {
+			System.out.println("[CLIENT] Cannot send CHOKE to " + peerId + " - not connected");
+		}
+	}
+
+	public void sendUnchoke(int peerId) {
+		Socket socket = connections.get(peerId);
+		if (socket != null && !socket.isClosed()) {
+			try {
+				OutputStream out = socket.getOutputStream();
+				MessageUtils.sendUnChoke(out);
+				System.out.println("[CLIENT] Sent UNCHOKE to server peer " + peerId);
+			} catch (Exception ex) {
+				System.out.println("[CLIENT] Error sending UNCHOKE to server " + peerId + ": " + ex);
+			}
+		} else {
+			System.out.println("[CLIENT] Cannot send UNCHOKE to " + peerId + " - not connected");
 		}
 	}
 

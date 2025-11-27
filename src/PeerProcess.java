@@ -1,4 +1,7 @@
 import java.util.List;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import models.Common;
 import models.Peer;
@@ -31,8 +34,10 @@ public class PeerProcess {
 		FileManager fileManager = new FileManager(selfPeerId, commonConfig.getFileName(), commonConfig.getFileSize(),
 				commonConfig.getPieceSize(), noOfPieces);
 
-		// Start server thread
-		PeerNode peerNode = new PeerNode(selfPeer, fileManager, noOfPieces);
+		// Start server thread - PASS BOTH INTERVALS
+		PeerNode peerNode = new PeerNode(selfPeer, fileManager, noOfPieces,
+				commonConfig.getUnChockingInterval(),
+				commonConfig.getNoOfPreferredNeighbours());
 		peerNode.startServer();
 		System.out.println("Peer " + selfPeerId + " starts as a server");
 
@@ -43,6 +48,16 @@ public class PeerProcess {
 				peerNode.connectClient(otherPeer.getPortNo(), otherPeer.getPeerId(), otherPeer.getHostName());
 			}
 		}
-	}
 
+		// Scheduler for preferred neighbors (every UnchokingInterval seconds)
+		ScheduledExecutorService chokingScheduler = Executors.newScheduledThreadPool(1);
+		chokingScheduler.scheduleAtFixedRate(
+				peerNode.selectPreferedNeighbours(),
+				0, // initial delay
+				commonConfig.getUnChockingInterval(),
+				TimeUnit.SECONDS);
+
+		System.out.println(
+				"[MAIN] Scheduler started - will run every " + commonConfig.getUnChockingInterval() + " seconds");
+	}
 }

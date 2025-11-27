@@ -15,21 +15,21 @@ public class ConfigParser {
 		try {
 			FileInputStream fs = new FileInputStream(configFilePath);
 			props.load(fs);
-			int k = Integer.parseInt(props.getProperty("NumberOfPreferredNeighbors"));
-			int m = Integer.parseInt(props.getProperty("UnchokingInterval"));
+			int noOfPreferredNeighbours = Integer.parseInt(props.getProperty("NumberOfPreferredNeighbors"));
+			int unChokingInterval = Integer.parseInt(props.getProperty("UnchokingInterval"));
 			int n = Integer.parseInt(props.getProperty("OptimisticUnchokingInterval"));
 			String fileName = props.getProperty("FileName");
 			long fileSize = Long.parseLong(props.getProperty("FileSize"));
 			int pieceSize = Integer.parseInt(props.getProperty("PieceSize"));
 
-			System.out.println("k is " + k);
-			System.out.println("m = is " + m);
+			System.out.println("noOfPreferredNeighbours is " + noOfPreferredNeighbours);
+			System.out.println("unChokingInterval = is " + unChokingInterval);
 			System.out.println("n = is " + n);
 			System.out.println("fileName is " + fileName);
 			System.out.println("fileSize is " + fileSize);
 			System.out.println("pieceSize is " + pieceSize);
 			fs.close();
-			return new Common(k, n, n, fileName, fileSize, pieceSize);
+			return new Common(noOfPreferredNeighbours, unChokingInterval, n, fileName, fileSize, pieceSize);
 		} catch (Exception ex) {
 			System.out.println("Error is " + ex.toString());
 		}
