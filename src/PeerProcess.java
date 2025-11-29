@@ -34,22 +34,15 @@ public class PeerProcess {
 		FileManager fileManager = new FileManager(selfPeerId, commonConfig.getFileName(), commonConfig.getFileSize(),
 				commonConfig.getPieceSize(), noOfPieces);
 
-		// Start server thread - PASS BOTH INTERVALS
-		PeerNode peerNode = new PeerNode(selfPeer, fileManager, noOfPieces,
-				commonConfig.getUnChockingInterval(),
-				commonConfig.getNoOfPreferredNeighbours());
+		PeerNode peerNode = new PeerNode(selfPeer, fileManager, noOfPieces, commonConfig.getNoOfPreferredNeighbours());
 		peerNode.startServer();
-		System.out.println("Peer " + selfPeerId + " starts as a server");
 
-		// Connect as client to all peers with smaller IDs
 		for (Peer otherPeer : peers) {
 			if (otherPeer.getPeerId() < selfPeerId) {
-				System.out.println("Peer " + selfPeerId + " connects as a client to Peer " + otherPeer.getPeerId());
 				peerNode.connectClient(otherPeer.getPortNo(), otherPeer.getPeerId(), otherPeer.getHostName());
 			}
 		}
 
-		// Scheduler for preferred neighbors (every UnchokingInterval seconds)
 		ScheduledExecutorService chokingScheduler = Executors.newScheduledThreadPool(1);
 		chokingScheduler.scheduleAtFixedRate(
 				peerNode.selectPreferedNeighbours(),
@@ -57,7 +50,5 @@ public class PeerProcess {
 				commonConfig.getUnChockingInterval(),
 				TimeUnit.SECONDS);
 
-		System.out.println(
-				"[MAIN] Scheduler started - will run every " + commonConfig.getUnChockingInterval() + " seconds");
 	}
 }

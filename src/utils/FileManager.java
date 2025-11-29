@@ -16,19 +16,19 @@ public class FileManager {
 	byte[][] pieces;
 	int noOfMissingPeices;
 
-	public FileManager(int peerId, String fileName, long fileSize, int peiceSize, int noOfPieces) {
+	public FileManager(int peerId, String fileName, long fileSize, int pieceSize, int noOfPieces) {
 		this.peerId = peerId;
 		this.fileName = fileName;
 		this.fileSize = fileSize;
-		this.pieceSize = peiceSize;
+		this.pieceSize = pieceSize;
 		this.noOfPieces = noOfPieces;
 		this.filePath = "../project_config_file_small/" + String.valueOf(peerId) + "/" + fileName;
-		this.pieces = new byte[noOfPieces][peiceSize];
+		this.pieces = new byte[noOfPieces][pieceSize];
 	}
 
 	public void breakFileIntoPeices() {
 		try {
-			System.out.println("filepath is " + this.filePath);
+			// System.out.println("filepath is " + this.filePath);
 			byte[] bytes = Files.readAllBytes(Paths.get(this.filePath));
 			int start = 0;
 			int ind = 0;
@@ -38,17 +38,12 @@ public class FileManager {
 				ind++;
 				start = end;
 			}
-			// for (int i = 0; i < this.pieces.length; i++) {
-			// System.out.println("Piece as text: " + new String(this.pieces[i],
-			// StandardCharsets.UTF_8));
-			// }
-
 		} catch (IOException io) {
-			System.err.println("File not found");
+			System.err.println("File not found: " + this.filePath);
 		} catch (IndexOutOfBoundsException indEx) {
-			System.err.println("Error no of peices are wrong");
+			System.err.println("Error: number of pieces are wrong");
 		} catch (Exception ex) {
-			System.err.println("Error while break file into peices:" + ex.toString());
+			System.err.println("Error while breaking file into pieces: " + ex.toString());
 		}
 	}
 
@@ -59,7 +54,6 @@ public class FileManager {
 	public void setPeice(int pieceIndex, byte[] piece) {
 		this.pieces[pieceIndex] = piece;
 		this.noOfMissingPeices = this.noOfMissingPeices - 1;
-		System.out.println("No of remaining pieces are " + this.noOfMissingPeices);
 		if (this.noOfMissingPeices == 0) {
 			savePiecesToFile();
 		}
@@ -73,18 +67,25 @@ public class FileManager {
 		this.noOfMissingPeices = noOfMissingPeices;
 	}
 
+	public int getTotalPieces() {
+		return noOfPieces;
+	}
+
 	private void savePiecesToFile() {
 		try (FileOutputStream fos = new FileOutputStream(this.filePath)) {
 			for (int i = 0; i < this.noOfPieces - 1; i++) {
 				fos.write(pieces[i]);
 			}
 			int lastByteTrim = (int) (this.fileSize % (long) this.pieceSize);
-			fos.write(pieces[this.noOfPieces - 1], 0, lastByteTrim);
+			if (lastByteTrim == 0) {
+				fos.write(pieces[this.noOfPieces - 1]);
+			} else {
+				fos.write(pieces[this.noOfPieces - 1], 0, lastByteTrim);
+			}
 			fos.flush();
-			System.out.println("File successfully reassembled at " + this.filePath);
 		} catch (IOException e) {
+			System.err.println("Error saving file: " + e.getMessage());
 			e.printStackTrace();
 		}
 	}
-
 }

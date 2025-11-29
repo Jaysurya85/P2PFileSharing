@@ -9,13 +9,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
 import models.Neighbour;
 import models.Peer;
 import utils.FileManager;
+import utils.Logger;
 
 public class PeerNode {
 	private Peer peer;
@@ -25,7 +24,6 @@ public class PeerNode {
 	private byte[] bitfield;
 	private FileManager fileManager;
 
-	private int unChokingInterval;
 	private int numberOfPreferredNeighbors;
 
 	private Set<Integer> currentlyUnchoked;
@@ -33,15 +31,13 @@ public class PeerNode {
 	private Set<Integer> connectedToAsServer;
 
 	private ConcurrentHashMap<Integer, Integer> bytesDownloaded;
-	private ScheduledExecutorService scheduler;
 
 	private ConcurrentHashMap<Integer, Neighbour> otherPeerBitfield;
 
 	private Object pieceLock;
 	private Object bitfieldLock;
 
-	public PeerNode(Peer peer, FileManager fileManager, int noOfPieces, int unChokingInterval,
-			int numberOfPreferredNeighbors) {
+	public PeerNode(Peer peer, FileManager fileManager, int noOfPieces, int numberOfPreferredNeighbors) {
 		int bytefieldLength = Math.ceilDiv(noOfPieces, 8);
 		this.peer = peer;
 		this.fileManager = fileManager;
@@ -58,9 +54,7 @@ public class PeerNode {
 		this.connectedToAsServer = Collections.synchronizedSet(new HashSet<>());
 
 		this.bytesDownloaded = new ConcurrentHashMap<>();
-		this.scheduler = Executors.newScheduledThreadPool(1);
 
-		this.unChokingInterval = unChokingInterval;
 		this.numberOfPreferredNeighbors = numberOfPreferredNeighbors;
 
 		if (peer.getisFilePresent()) {
@@ -138,7 +132,7 @@ public class PeerNode {
 	}
 
 	public void connectClient(int serverPort, int serverPeerId, String serverHost) {
-		System.out.println("inside peernode");
+		// System.out.println("inside peernode");
 		clientManager.connect(serverPort, serverPeerId, serverHost).start();
 		this.connectedToAsClient.add(serverPeerId);
 	}
@@ -221,7 +215,6 @@ public class PeerNode {
 		this.requestedPeices = requestedPeices;
 	}
 
-	// PUBLIC METHOD that returns Runnable for scheduler
 	public Runnable selectPreferedNeighbours() {
 		return () -> {
 			selectPreferredNeighbors();
@@ -265,90 +258,66 @@ public class PeerNode {
 		return this.fileManager.getNoOfMissingPeices() == 0;
 	}
 
-	private void selectPreferredNeighbors() {
-		System.out.println("[SCHEDULER] Running preferred neighbor selection...");
-
+	private synchronized void selectPreferredNeighbors() {
 		Set<Integer> allConnectedPeers = new HashSet<>();
-		for (Integer it : connectedToAsServer) {
-			System.out.println("connected peers are " + it);
-		}
-		for (Integer it : connectedToAsClient) {
-			System.out.println("connected peers are " + it);
-		}
 		allConnectedPeers.addAll(this.connectedToAsClient);
 		allConnectedPeers.addAll(this.connectedToAsServer);
 
 		List<Integer> interestedPeers = new ArrayList<>();
 		for (Integer peerId : allConnectedPeers) {
-			Neighbour neighbour = otherPeerBitfield.get(peerId);
+			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
 			if (neighbour != null && neighbour.isInterestedInMe()) {
 				interestedPeers.add(peerId);
 			}
 		}
 
-		System.out.println("[SCHEDULER] Interested peers: " + interestedPeers);
-
 		Set<Integer> newPreferredNeighbors = new HashSet<>();
 
 		if (hasCompleteFile()) {
-			System.out.println("[SCHEDULER] Complete file - selecting randomly");
 			Collections.shuffle(interestedPeers);
 			for (int i = 0; i < Math.min(this.numberOfPreferredNeighbors, interestedPeers.size()); i++) {
 				newPreferredNeighbors.add(interestedPeers.get(i));
 			}
 		} else {
-			// Select based on download rate
-			System.out.println("[SCHEDULER] Incomplete file - selecting by download rate");
 			Map<Integer, Integer> downloadRates = new HashMap<>();
 			for (Integer peerId : interestedPeers) {
-				int downloaded = bytesDownloaded.getOrDefault(peerId, 0);
+				int downloaded = this.bytesDownloaded.getOrDefault(peerId, 0);
 				downloadRates.put(peerId, downloaded);
-				System.out.println("[SCHEDULER] Peer " + peerId + " downloaded: " + downloaded + " bytes");
 			}
 
-			// Sort by download rate (descending)
 			List<Integer> sortedPeers = downloadRates.entrySet().stream()
 					.sorted(Map.Entry.<Integer, Integer>comparingByValue().reversed())
 					.map(Map.Entry::getKey)
 					.collect(Collectors.toList());
 
-			// Pick top K
-			for (int i = 0; i < Math.min(numberOfPreferredNeighbors, sortedPeers.size()); i++) {
+			for (int i = 0; i < Math.min(this.numberOfPreferredNeighbors, sortedPeers.size()); i++) {
 				newPreferredNeighbors.add(sortedPeers.get(i));
 			}
 		}
 
-		// Reset download rates for next interval
 		bytesDownloaded.clear();
 
-		System.out.println("[SCHEDULER] New preferred neighbors: " + newPreferredNeighbors);
-
-		// Send UNCHOKE to newly preferred neighbors
 		synchronized (currentlyUnchoked) {
 			for (Integer peerId : newPreferredNeighbors) {
 				if (!currentlyUnchoked.contains(peerId)) {
-					System.out.println("[SCHEDULER] Unchoking peer " + peerId);
 					sendUnchokeMessage(peerId);
 				}
 			}
 
-			// Send CHOKE to previously unchoked peers no longer preferred
 			for (Integer peerId : currentlyUnchoked) {
 				if (!newPreferredNeighbors.contains(peerId)) {
-					System.out.println("[SCHEDULER] Choking peer " + peerId);
 					sendChokeMessage(peerId);
 				}
 			}
 
-			// Update current set
 			currentlyUnchoked.clear();
 			currentlyUnchoked.addAll(newPreferredNeighbors);
 		}
 
+		Logger.logPreferredNeighbors(peer.getPeerId(), new ArrayList<>(newPreferredNeighbors));
 	}
 
 	private void sendUnchokeMessage(int peerId) {
-		// Send to peer regardless of connection type
 		if (connectedToAsClient.contains(peerId)) {
 			clientManager.sendUnchoke(peerId);
 		}
@@ -358,7 +327,6 @@ public class PeerNode {
 	}
 
 	private void sendChokeMessage(int peerId) {
-		// Send to peer regardless of connection type
 		if (connectedToAsClient.contains(peerId)) {
 			clientManager.sendChoke(peerId);
 		}

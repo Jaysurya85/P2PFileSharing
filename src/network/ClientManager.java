@@ -3,7 +3,6 @@ package network;
 import java.net.Socket;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
-import java.util.List;
 
 import Messages.*;
 
@@ -12,6 +11,7 @@ import java.io.*;
 import models.HandshakeInfo;
 import models.Peer;
 import utils.FileManager;
+import utils.Logger;
 import utils.MessageUtils;
 
 class ClientListener implements Runnable {
@@ -19,97 +19,96 @@ class ClientListener implements Runnable {
 	private OutputStream out;
 	private PeerNode peerNode;
 	private int serverPeerId;
+	private int clientPeerId;
 
-	public ClientListener(InputStream in, OutputStream out, PeerNode peerNode, int serverPeerId) {
+	public ClientListener(InputStream in, OutputStream out, PeerNode peerNode, int serverPeerId, int clientPeerId) {
 		this.in = in;
 		this.out = out;
 		this.peerNode = peerNode;
 		this.serverPeerId = serverPeerId;
+		this.clientPeerId = clientPeerId;
 	}
 
 	public void clientMessageHandler(int type, byte[] payload) throws Exception {
 		switch (type) {
-			case 0:
-				ChokeMessageHandler serverChokeHandler = new ChokeMessageHandler();
-				System.out.println("Server is choking  us " + serverChokeHandler);
+			case 0: // Choke
+				// ChokeMessageHandler serverChokeHandler = new ChokeMessageHandler();
+				Logger.logChoked(this.clientPeerId, this.serverPeerId);
 				break;
 
-			case 1:
-				UnChokeMessageHandler serverUnchokeHandler = new UnChokeMessageHandler();
-				System.out.println("Server is un choking us " + serverUnchokeHandler);
+			case 1: // Unchoke
+				// UnChokeMessageHandler serverUnchokeHandler = new UnChokeMessageHandler();
+				Logger.logUnchoked(this.clientPeerId, this.serverPeerId);
+
 				int interestedPiece = peerNode.getInterestedPiece(this.serverPeerId);
 				if (interestedPiece >= 0) {
 					MessageUtils.sendRequest(interestedPiece, out);
-				} else {
-					System.out.println("No peice to request");
 				}
 				break;
 
-			case 2:
-				InterestedMessageHandler serverInterestedMessage = new InterestedMessageHandler();
-				System.out.println("Server is sending interested as " + serverInterestedMessage);
+			case 2: // Interested
+				// InterestedMessageHandler serverInterestedMessage = new
+				// InterestedMessageHandler();
+				Logger.logReceivingInterested(this.clientPeerId, this.serverPeerId);
 				this.peerNode.setPeerInterested(this.serverPeerId);
-				// MessageUtils.sendUnChoke(this.out);
+				MessageUtils.sendUnChoke(this.out);
 				break;
 
-			case 3:
-				NotInterestedMessageHandler serverNotInterestedMessage = new NotInterestedMessageHandler();
-				System.out.println("Server is sending not interested as " + serverNotInterestedMessage);
+			case 3: // Not Interested
+				// NotInterestedMessageHandler serverNotInterestedMessage = new
+				// NotInterestedMessageHandler();
+				Logger.logReceivingNotInterested(this.clientPeerId, this.serverPeerId);
 				this.peerNode.setPeerNotInterested(this.serverPeerId);
 				break;
 
-			case 4:
+			case 4: // Have
 				HaveMessageHandler serverHaveMessage = HaveMessageHandler.fromByteArray(payload);
-				System.out.println("Server is sending have message as " + serverHaveMessage);
+				Logger.logReceivingHave(this.clientPeerId, this.serverPeerId, serverHaveMessage.getPieceIndex());
 				this.peerNode.setOtherPeerBit(this.serverPeerId, serverHaveMessage.getPieceIndex());
-				byte[] serverBitfield = this.peerNode.getOtherBitfield(this.serverPeerId);
-				String payloadStr = "";
-				for (byte b : serverBitfield) {
-					payloadStr += String.format("%8s", Integer.toBinaryString(b & 0xFF)).replace(' ', '0');
-				}
-				System.out.println(payloadStr);
 				break;
 
-			case 5:
+			case 5: // Bitfield
 				BitfieldMessageHandler serverBitfieldMessage = BitfieldMessageHandler.fromByteArray(payload);
-				System.out.println("Server is sending bitfield as " + serverBitfieldMessage);
 				this.peerNode.setOtherPeerBitfield(serverPeerId, serverBitfieldMessage.getPayload());
 				boolean isInterested = this.peerNode.setInterestedPieces(serverPeerId, payload);
 				MessageUtils.sendInterestedOrNot(isInterested, this.out);
 				break;
 
-			case 6:
+			case 6: // Request
 				RequestMessageHandler serverRequestMessage = RequestMessageHandler.fromByteArray(payload);
-				System.out.println("Server is sending request as " + serverRequestMessage);
 				int pieceIndex = serverRequestMessage.getPieceIndex();
 				FileManager fm = this.peerNode.getFileManager();
 				byte[] piece = fm.getPiece(pieceIndex);
 				MessageUtils.sendPiece(pieceIndex, piece, this.out);
 				break;
 
-			case 7:
+			case 7: // Piece
 				PieceMessageHandler clientPieceMessage = PieceMessageHandler.fromByteArray(payload);
-				System.out.println("Server is sending peice as " + clientPieceMessage);
 				pieceIndex = clientPieceMessage.getPieceIndex();
 				byte[] pieceData = clientPieceMessage.getPieceData();
 
-				// saving the piece
 				fm = this.peerNode.getFileManager();
 				fm.setPeice(pieceIndex, pieceData);
+
+				this.peerNode.recordBytesDownloaded(this.serverPeerId, pieceData.length);
+
+				int currentPieceCount = fm.getTotalPieces() - fm.getNoOfMissingPeices();
+				Logger.logDownloadingPiece(this.clientPeerId, this.serverPeerId, pieceIndex, currentPieceCount);
+
+				if (fm.getNoOfMissingPeices() == 0) {
+					Logger.logDownloadComplete(this.clientPeerId);
+				}
+
 				this.peerNode.setBit(serverPeerId, pieceIndex);
 				HaveMessageHandler haveMessage = new HaveMessageHandler(pieceIndex);
 				byte[] havePayload = haveMessage.toByteArray();
 
-				// Send the have messages to all connected peer
 				this.peerNode.broadcastToClients(havePayload);
 				this.peerNode.braodcastToServers(havePayload);
 
-				// Request the next piece
 				interestedPiece = peerNode.getInterestedPiece(serverPeerId);
 				if (interestedPiece >= 0) {
 					MessageUtils.sendRequest(interestedPiece, out);
-				} else {
-					System.out.println("No peice to request");
 				}
 				break;
 
@@ -155,9 +154,6 @@ class ClientListener implements Runnable {
 	}
 }
 
-/*
- * client (selfClientinfo, selfServerINfo, serverInfoToWhichIAmClient)
- */
 public class ClientManager {
 	private PeerNode peerNode;
 	private Peer peer;
@@ -169,15 +165,12 @@ public class ClientManager {
 		this.peer = peerNode.getPeer();
 		this.serverHandshakeInfo = new HandshakeInfo();
 		this.connections = new HashMap<>();
-
 	}
 
 	public boolean doHandshake(InputStream in, OutputStream out) throws Exception {
-
 		HandshakeMessage message = new HandshakeMessage();
 		byte[] handshakeMessage = message.buildHandshake(this.peer.getPeerId());
 		byte[] serverHandshakeBuffer = new byte[32];
-		message.printOutput(handshakeMessage);
 		out.write(handshakeMessage);
 		in.read(serverHandshakeBuffer);
 		this.serverHandshakeInfo = message.parseHandshake(serverHandshakeBuffer);
@@ -188,13 +181,10 @@ public class ClientManager {
 	public void broadcastToServers(byte[] havePayload) {
 		for (HashMap.Entry<Integer, Socket> ep : connections.entrySet()) {
 			Socket socket = ep.getValue();
-			System.out.println("Sending have messages to server " + ep.getKey());
 			try {
 				OutputStream out = socket.getOutputStream();
 				out.write(havePayload);
 			} catch (Exception ex) {
-				System.out.println("Error while sending have message to server " + ep.getKey() + " and the error is "
-						+ ex.toString());
 			}
 		}
 	}
@@ -205,12 +195,9 @@ public class ClientManager {
 			try {
 				OutputStream out = socket.getOutputStream();
 				MessageUtils.sendChoke(out);
-				System.out.println("[CLIENT] Sent CHOKE to server peer " + peerId);
 			} catch (Exception ex) {
 				System.out.println("[CLIENT] Error sending CHOKE to server " + peerId + ": " + ex);
 			}
-		} else {
-			System.out.println("[CLIENT] Cannot send CHOKE to " + peerId + " - not connected");
 		}
 	}
 
@@ -220,18 +207,14 @@ public class ClientManager {
 			try {
 				OutputStream out = socket.getOutputStream();
 				MessageUtils.sendUnChoke(out);
-				System.out.println("[CLIENT] Sent UNCHOKE to server peer " + peerId);
 			} catch (Exception ex) {
 				System.out.println("[CLIENT] Error sending UNCHOKE to server " + peerId + ": " + ex);
 			}
-		} else {
-			System.out.println("[CLIENT] Cannot send UNCHOKE to " + peerId + " - not connected");
 		}
 	}
 
 	private void sendBitfield(OutputStream out) throws Exception {
 		BitfieldMessageHandler bitfieldMessage = new BitfieldMessageHandler(this.peerNode.getBitfield());
-		System.out.println("Client is sending bitfield as " + bitfieldMessage);
 		out.write(bitfieldMessage.toByteArray());
 	}
 
@@ -242,24 +225,20 @@ public class ClientManager {
 				connections.put(serverPeerId, socket);
 				InputStream in = socket.getInputStream();
 				OutputStream out = socket.getOutputStream();
-				System.out.println("Connecting to server " + serverPeerId + " " + serverHost + ":" + serverPort);
+
 				boolean isHandshakeDone = doHandshake(in, out);
 				if (!isHandshakeDone) {
 					out.write("exit".getBytes());
-					System.out.println("Closing Client to server because it wasn't a match: " + serverPeerId);
 				}
-				System.out.println(
-						"Handshake done with Server " + this.serverHandshakeInfo.getHeader() + " peer id is "
-								+ this.serverHandshakeInfo.getPeerId());
-				// 2. Start listening thread **after handshake**
-				Thread listenerThread = new Thread(new ClientListener(in, out, peerNode, serverPeerId));
+				Logger.logTCPConnectionTo(this.peer.getPeerId(), serverPeerId);
+
+				Thread listenerThread = new Thread(
+						new ClientListener(in, out, peerNode, serverPeerId, this.peer.getPeerId()));
 				listenerThread.start();
 				sendBitfield(out);
-				// socket.close();
 			} catch (Exception ex) {
-				System.out.println("Exception while creating client" + ex);
+				System.out.println("Exception while creating client: " + ex);
 			}
 		});
 	}
-
 }

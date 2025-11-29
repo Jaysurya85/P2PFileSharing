@@ -36,6 +36,5 @@ public class MessageUtils {
 		PieceMessageHandler pieceMsg = new PieceMessageHandler(pieceIndex, pieceData);
 		out.write(pieceMsg.toByteArray());
 		out.flush();
-		System.out.println("Sent dummy PIECE for pieceIndex " + pieceIndex);
 	}
 }

@@ -15,23 +15,17 @@ public class ConfigParser {
 		try {
 			FileInputStream fs = new FileInputStream(configFilePath);
 			props.load(fs);
-			int noOfPreferredNeighbours = Integer.parseInt(props.getProperty("NumberOfPreferredNeighbors"));
-			int unChokingInterval = Integer.parseInt(props.getProperty("UnchokingInterval"));
+			int k = Integer.parseInt(props.getProperty("NumberOfPreferredNeighbors"));
+			int m = Integer.parseInt(props.getProperty("UnchokingInterval"));
 			int n = Integer.parseInt(props.getProperty("OptimisticUnchokingInterval"));
 			String fileName = props.getProperty("FileName");
 			long fileSize = Long.parseLong(props.getProperty("FileSize"));
 			int pieceSize = Integer.parseInt(props.getProperty("PieceSize"));
 
-			System.out.println("noOfPreferredNeighbours is " + noOfPreferredNeighbours);
-			System.out.println("unChokingInterval = is " + unChokingInterval);
-			System.out.println("n = is " + n);
-			System.out.println("fileName is " + fileName);
-			System.out.println("fileSize is " + fileSize);
-			System.out.println("pieceSize is " + pieceSize);
 			fs.close();
-			return new Common(noOfPreferredNeighbours, unChokingInterval, n, fileName, fileSize, pieceSize);
+			return new Common(m, k, n, fileName, fileSize, pieceSize);
 		} catch (Exception ex) {
-			System.out.println("Error is " + ex.toString());
+			System.err.println("Error reading Common.cfg: " + ex.toString());
 		}
 		return new Common();
 	}
@@ -54,14 +48,10 @@ public class ConfigParser {
 				boolean flag = Integer.parseInt(lineParts[3]) == 1;
 				peers.add(new Peer(peerId, hostName, portNo, flag));
 			}
-			// for (Peer peer : peers) {
-			// System.out.println(peer);
-			// }
 			br.close();
 		} catch (Exception ex) {
-			System.out.println("Error is " + ex.toString());
+			System.err.println("Error reading PeerInfo.cfg: " + ex.toString());
 		}
 		return peers;
 	}
-
 }
