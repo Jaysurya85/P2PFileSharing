@@ -37,4 +37,10 @@ public class MessageUtils {
 		out.write(pieceMsg.toByteArray());
 		out.flush();
 	}
+
+	public static void sendCompleted(OutputStream out) throws Exception {
+		CompletedMessageHandler completed = new CompletedMessageHandler();
+		out.write(completed.toByteArray());
+		out.flush();
+	}
 }

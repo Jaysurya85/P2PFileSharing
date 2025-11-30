@@ -1,7 +1,4 @@
 import java.util.List;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 import models.Common;
 import models.Peer;
@@ -35,6 +32,7 @@ public class PeerProcess {
 				commonConfig.getPieceSize(), noOfPieces);
 
 		PeerNode peerNode = new PeerNode(selfPeer, fileManager, noOfPieces, commonConfig.getNoOfPreferredNeighbours());
+
 		peerNode.startServer();
 
 		for (Peer otherPeer : peers) {
@@ -43,12 +41,6 @@ public class PeerProcess {
 			}
 		}
 
-		ScheduledExecutorService chokingScheduler = Executors.newScheduledThreadPool(1);
-		chokingScheduler.scheduleAtFixedRate(
-				peerNode.selectPreferedNeighbours(),
-				0, // initial delay
-				commonConfig.getUnChockingInterval(),
-				TimeUnit.SECONDS);
-
+		peerNode.startSchedulers(commonConfig.getUnChockingInterval(), commonConfig.getN());
 	}
 }

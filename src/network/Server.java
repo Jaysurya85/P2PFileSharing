@@ -2,7 +2,6 @@ package network;
 
 import java.nio.ByteBuffer;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -39,12 +38,10 @@ class ClientHandler implements Runnable {
 	public void serverMessageHandler(byte type, byte[] payload) throws Exception {
 		switch (type) {
 			case 0: // Choke
-				// ChokeMessageHandler clientChokeHandler = new ChokeMessageHandler();
 				Logger.logChoked(this.serverPeerId, this.clientHandshakeInfo.getPeerId());
 				break;
 
 			case 1: // Unchoke
-				// UnChokeMessageHandler clientUnchokeHandler = new UnChokeMessageHandler();
 				Logger.logUnchoked(this.serverPeerId, this.clientHandshakeInfo.getPeerId());
 
 				int interestedPiece = peerNode.getInterestedPiece(this.clientHandshakeInfo.getPeerId());
@@ -54,23 +51,18 @@ class ClientHandler implements Runnable {
 				break;
 
 			case 2: // Interested
-				// InterestedMessageHandler clientInterestedMessage = new
-				// InterestedMessageHandler();
 				Logger.logReceivingInterested(this.serverPeerId, this.clientHandshakeInfo.getPeerId());
 				this.peerNode.setPeerInterested(this.clientHandshakeInfo.getPeerId());
 				MessageUtils.sendUnChoke(this.out);
 				break;
 
 			case 3: // Not Interested
-				// NotInterestedMessageHandler clientNotInterestedMessage = new
-				// NotInterestedMessageHandler();
 				Logger.logReceivingNotInterested(this.serverPeerId, this.clientHandshakeInfo.getPeerId());
 				this.peerNode.setPeerNotInterested(this.clientHandshakeInfo.getPeerId());
 				break;
 
 			case 4: // Have
 				HaveMessageHandler clientHaveMessage = HaveMessageHandler.fromByteArray(payload);
-				// System.out.println("Client is sending have message as " + clientHaveMessage);
 				Logger.logReceivingHave(this.serverPeerId, this.clientHandshakeInfo.getPeerId(),
 						clientHaveMessage.getPieceIndex());
 				this.peerNode.setOtherPeerBit(this.clientHandshakeInfo.getPeerId(), clientHaveMessage.getPieceIndex());
@@ -82,6 +74,9 @@ class ClientHandler implements Runnable {
 						clientBitfieldMessage.getPayload());
 				BitfieldMessageHandler bitfieldMessage = new BitfieldMessageHandler(this.peerNode.getBitfield());
 				this.out.write(bitfieldMessage.toByteArray());
+				if (this.peerNode.hasCompleteFile()) {
+					MessageUtils.sendCompleted(this.out);
+				}
 				boolean isInterested = peerNode.setInterestedPieces(this.clientHandshakeInfo.getPeerId(), payload);
 				MessageUtils.sendInterestedOrNot(isInterested, this.out);
 				break;
@@ -108,8 +103,11 @@ class ClientHandler implements Runnable {
 				Logger.logDownloadingPiece(this.serverPeerId, this.clientHandshakeInfo.getPeerId(),
 						pieceIndex, currentPieceCount);
 
+				// Check if download is complete
 				if (fm.getNoOfMissingPeices() == 0) {
 					Logger.logDownloadComplete(this.serverPeerId);
+					// NEW: Notify all peers of completion
+					this.peerNode.onDownloadComplete();
 				}
 
 				this.peerNode.setBit(this.clientHandshakeInfo.getPeerId(), pieceIndex);
@@ -123,6 +121,10 @@ class ClientHandler implements Runnable {
 				if (interestedPiece >= 0) {
 					MessageUtils.sendRequest(interestedPiece, out);
 				}
+				break;
+
+			case 8:
+				this.peerNode.setPeerCompleted(this.clientHandshakeInfo.getPeerId());
 				break;
 
 			default:
@@ -162,13 +164,12 @@ class ClientHandler implements Runnable {
 				serverMessageHandler(typeBytes[0], payload);
 			}
 		} catch (Exception ex) {
-			System.out.println("Error in client handler: " + ex);
+			// Connection closed or error - normal during shutdown
 		} finally {
 			try {
 				this.socket.close();
 			} catch (Exception ex) {
-				System.out.println("Error closing connection with client " +
-						this.clientPeerId);
+				// Ignore
 			}
 		}
 	}
@@ -193,8 +194,19 @@ class ClientHandler implements Runnable {
 	public void sendHaveMessage(byte[] byteArray) {
 		try {
 			this.out.write(byteArray);
+			this.out.flush(); // NEW: Force flush
 		} catch (Exception ex) {
-			System.out.println("Error occurred while trying to send message from server to client");
+			// Connection may be closed
+		}
+	}
+
+	public void close() {
+		try {
+			if (socket != null && !socket.isClosed()) {
+				socket.close();
+			}
+		} catch (IOException e) {
+			// Ignore
 		}
 	}
 }
@@ -203,6 +215,8 @@ public class Server implements Runnable {
 	PeerNode peerNode;
 	Peer peer;
 	Map<Integer, ClientHandler> clientHandlers;
+	private ServerSocket serverSocket;
+	private volatile boolean isRunning = true;
 
 	public Server(PeerNode peerNode) {
 		this.peerNode = peerNode;
@@ -225,8 +239,7 @@ public class Server implements Runnable {
 			try {
 				MessageUtils.sendChoke(handler.out);
 			} catch (Exception ex) {
-				System.out.println("[SERVER] Error sending CHOKE to client " + peerId + ": "
-						+ ex);
+				// Connection may be closed
 			}
 		}
 	}
@@ -237,30 +250,61 @@ public class Server implements Runnable {
 			try {
 				MessageUtils.sendUnChoke(handler.out);
 			} catch (Exception ex) {
-				System.out.println("[SERVER] Error sending UNCHOKE to client " + peerId + ": " + ex);
+				// Connection may be closed
 			}
 		}
+	}
+
+	public void shutdown() {
+		isRunning = false;
+
+		try {
+			if (serverSocket != null && !serverSocket.isClosed()) {
+				serverSocket.close(); // This unblocks the accept() call
+			}
+		} catch (IOException e) {
+			// Ignore
+		}
+
+		for (ClientHandler handler : clientHandlers.values()) {
+			handler.close();
+		}
+		clientHandlers.clear();
 	}
 
 	@Override
 	public void run() {
 		try {
-			ServerSocket serverSocket = new ServerSocket(peer.getPortNo(), 50,
+			serverSocket = new ServerSocket(peer.getPortNo(), 50,
 					InetAddress.getByName(peer.getHostName()));
-			while (true) {
-				Socket clientSocket = serverSocket.accept();
-				ClientHandler clientHandler = new ClientHandler(clientSocket, this.peer.getPeerId(), this.peerNode);
-				Optional<Integer> clientPeerId = clientHandler.doHandshake();
-				if (clientPeerId.isPresent()) {
-					this.clientHandlers.put(clientPeerId.get(), clientHandler);
-					this.peerNode.addClient(clientPeerId.get());
-					Thread clientThread = new Thread(clientHandler);
-					clientThread.start();
+
+			while (isRunning) {
+				try {
+					Socket clientSocket = serverSocket.accept();
+					if (!isRunning) {
+						clientSocket.close();
+						break;
+					}
+					ClientHandler clientHandler = new ClientHandler(clientSocket, this.peer.getPeerId(), this.peerNode);
+					Optional<Integer> clientPeerId = clientHandler.doHandshake();
+					if (clientPeerId.isPresent()) {
+						this.clientHandlers.put(clientPeerId.get(), clientHandler);
+						this.peerNode.addClient(clientPeerId.get());
+						Thread clientThread = new Thread(clientHandler);
+						clientThread.setDaemon(true); // NEW: Make daemon so JVM can exit
+						clientThread.start();
+					}
+				} catch (SocketException e) {
+					if (!isRunning) {
+						break;
+					}
+					throw e;
 				}
 			}
 		} catch (Exception ex) {
-			System.out.println("Exception while creating server " + this.peer.getPeerId()
-					+ ": " + ex);
+			if (isRunning) {
+				System.err.println("Server exception: " + ex);
+			}
 		}
 	}
 }

@@ -9,13 +9,14 @@ public class Neighbour {
 	private boolean isInterestedInMe;
 	private int peerId;
 	private List<Integer> interestingPieces;
+	private boolean hasCompletedFile;
 
 	public Neighbour(byte[] bitfield, int peerId) {
 		this.bitfield = bitfield;
 		this.isInterestedInMe = false;
 		this.peerId = peerId;
 		this.interestingPieces = Collections.synchronizedList(new ArrayList<>());
-
+		this.hasCompletedFile = false;
 	}
 
 	public byte[] getBitfield() {
@@ -47,15 +48,24 @@ public class Neighbour {
 	}
 
 	public void addInterestingPieces(int pieceIndex) {
-		interestingPieces.add(pieceIndex);
+		if (!interestingPieces.contains(pieceIndex)) {
+			interestingPieces.add(pieceIndex);
+		}
 	}
 
 	public void removeInterestingPieces(int pieceIndex) {
-		interestingPieces.remove(pieceIndex);
+		interestingPieces.remove(Integer.valueOf(pieceIndex));
 	}
 
 	public void setInterestingPieces(List<Integer> interestingPieces) {
 		this.interestingPieces = Collections.synchronizedList(new ArrayList<>(interestingPieces));
 	}
 
+	public boolean hasCompletedFile() {
+		return hasCompletedFile;
+	}
+
+	public void setHasCompletedFile(boolean hasCompletedFile) {
+		this.hasCompletedFile = hasCompletedFile;
+	}
 }

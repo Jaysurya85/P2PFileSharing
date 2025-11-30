@@ -22,7 +22,7 @@ public class FileManager {
 		this.fileSize = fileSize;
 		this.pieceSize = pieceSize;
 		this.noOfPieces = noOfPieces;
-		this.filePath = "../project_config_file_small/" + String.valueOf(peerId) + "/" + fileName;
+		this.filePath = "../project_config_file_large/" + String.valueOf(peerId) + "/" + fileName;
 		this.pieces = new byte[noOfPieces][pieceSize];
 	}
 

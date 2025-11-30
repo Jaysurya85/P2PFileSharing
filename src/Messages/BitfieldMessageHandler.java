@@ -32,8 +32,6 @@ public class BitfieldMessageHandler {
 	}
 
 	public static BitfieldMessageHandler fromByteArray(byte[] payload) {
-		System.out.println("inside BitfieldMessageHandler");
-
 		return new BitfieldMessageHandler(payload);
 	}
 

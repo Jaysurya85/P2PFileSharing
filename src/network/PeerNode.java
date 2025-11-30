@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.stream.Collectors;
 
 import models.Neighbour;
@@ -29,13 +31,21 @@ public class PeerNode {
 	private Set<Integer> currentlyUnchoked;
 	private Set<Integer> connectedToAsClient;
 	private Set<Integer> connectedToAsServer;
+	private Integer optimisticallyUnchokedPeer;
 
 	private ConcurrentHashMap<Integer, Integer> bytesDownloaded;
+	private ScheduledExecutorService preferredNeighborScheduler;
+	private ScheduledExecutorService optimisticScheduler;
 
 	private ConcurrentHashMap<Integer, Neighbour> otherPeerBitfield;
 
 	private Object pieceLock;
 	private Object bitfieldLock;
+	private Object optimisticLock;
+
+	private volatile boolean isTerminating = false;
+	private volatile boolean hasNotifiedCompletion = false;
+	private boolean startedWithCompleteFile; // NEW: Track if we started with file
 
 	public PeerNode(Peer peer, FileManager fileManager, int noOfPieces, int numberOfPreferredNeighbors) {
 		int bytefieldLength = Math.ceilDiv(noOfPieces, 8);
@@ -46,6 +56,7 @@ public class PeerNode {
 		this.requestedPeices = ConcurrentHashMap.newKeySet();
 		this.pieceLock = new Object();
 		this.bitfieldLock = new Object();
+		this.optimisticLock = new Object();
 		this.bitfield = new byte[bytefieldLength];
 		this.otherPeerBitfield = new ConcurrentHashMap<>();
 
@@ -54,30 +65,59 @@ public class PeerNode {
 		this.connectedToAsServer = Collections.synchronizedSet(new HashSet<>());
 
 		this.bytesDownloaded = new ConcurrentHashMap<>();
-
 		this.numberOfPreferredNeighbors = numberOfPreferredNeighbors;
+		this.optimisticallyUnchokedPeer = null;
+
+		this.preferredNeighborScheduler = Executors.newScheduledThreadPool(1);
+		this.optimisticScheduler = Executors.newScheduledThreadPool(1);
 
 		if (peer.getisFilePresent()) {
 			fillBitfield(noOfPieces);
 			this.fileManager.breakFileIntoPeices();
 			this.fileManager.setNoOfMissingPeices(0);
+			this.startedWithCompleteFile = true; // NEW: Mark that we started with file
 		} else {
 			Arrays.fill(this.bitfield, (byte) 0);
 			this.fileManager.setNoOfMissingPeices(noOfPieces);
+			this.startedWithCompleteFile = false; // NEW: We need to download
 		}
 	}
 
 	public void setPeerInterested(int peerId) {
-		this.otherPeerBitfield.get(peerId).setInterestedInMe(true);
+		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+		if (neighbour != null) {
+			neighbour.setInterestedInMe(true);
+		}
 	}
 
 	public void setPeerNotInterested(int peerId) {
-		this.otherPeerBitfield.get(peerId).setInterestedInMe(false);
+		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+		if (neighbour != null) {
+			neighbour.setInterestedInMe(false);
+		}
+	}
+
+	public void setPeerCompleted(int peerId) {
+		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+		if (neighbour != null) {
+			neighbour.setHasCompletedFile(true);
+			checkAndTerminate();
+		}
 	}
 
 	public void setOtherPeerBitfield(int peerId, byte[] otherPeerBitfield) {
 		synchronized (bitfieldLock) {
 			this.otherPeerBitfield.put(peerId, new Neighbour(otherPeerBitfield, peerId));
+		}
+
+		// NEW: Check if the OTHER peer has complete file from their bitfield
+		if (checkPeerHasCompleteFile(otherPeerBitfield)) {
+			// The peer we just connected to has complete file
+			// Mark them as completed immediately
+			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+			if (neighbour != null) {
+				neighbour.setHasCompletedFile(true);
+			}
 		}
 	}
 
@@ -132,7 +172,6 @@ public class PeerNode {
 	}
 
 	public void connectClient(int serverPort, int serverPeerId, String serverHost) {
-		// System.out.println("inside peernode");
 		clientManager.connect(serverPort, serverPeerId, serverHost).start();
 		this.connectedToAsClient.add(serverPeerId);
 	}
@@ -158,7 +197,10 @@ public class PeerNode {
 			}
 		}
 		synchronized (pieceLock) {
-			this.otherPeerBitfield.get(peerId).setInterestingPieces(interestedPieces);
+			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+			if (neighbour != null) {
+				neighbour.setInterestingPieces(interestedPieces);
+			}
 		}
 		return !interestedPieces.isEmpty();
 	}
@@ -169,7 +211,10 @@ public class PeerNode {
 
 	public int getInterestedPiece(int peerId) {
 		synchronized (pieceLock) {
-			List<Integer> pieces = this.otherPeerBitfield.get(peerId).getInterestingPieces();
+			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+			if (neighbour == null)
+				return -1;
+			List<Integer> pieces = neighbour.getInterestingPieces();
 			int ind = pieces.size() - 1;
 			while (ind >= 0) {
 				if (this.requestedPeices.contains(pieces.get(ind))) {
@@ -196,7 +241,8 @@ public class PeerNode {
 	}
 
 	public byte[] getOtherBitfield(int peerId) {
-		return this.otherPeerBitfield.get(peerId).getBitfield();
+		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+		return neighbour != null ? neighbour.getBitfield() : null;
 	}
 
 	public FileManager getFileManager() {
@@ -217,8 +263,60 @@ public class PeerNode {
 
 	public Runnable selectPreferedNeighbours() {
 		return () -> {
-			selectPreferredNeighbors();
+			if (!isTerminating) {
+				selectPreferredNeighbors();
+			}
 		};
+	}
+
+	public Runnable selectOptimisticNeighbor() {
+		return () -> {
+			if (!isTerminating) {
+				selectOptimisticUnchokedNeighbor();
+			}
+		};
+	}
+
+	// NEW: Check if a bitfield represents a complete file
+	private boolean checkPeerHasCompleteFile(byte[] peerBitfield) {
+		int totalPieces = this.fileManager.getTotalPieces();
+
+		for (int i = 0; i < totalPieces; i++) {
+			int byteIndex = i / 8;
+			int bitIndex = 7 - i % 8;
+
+			if (byteIndex >= peerBitfield.length) {
+				return false; // Invalid bitfield
+			}
+
+			byte val = peerBitfield[byteIndex];
+			byte mask = (byte) (1 << bitIndex);
+			if ((val & mask) == 0) {
+				return false; // Missing this piece
+			}
+		}
+
+		return true; // Has all pieces
+	}
+
+	public void notifyCompletionToAll() {
+		if (hasNotifiedCompletion) {
+			return;
+		}
+		hasNotifiedCompletion = true;
+
+		try {
+			byte[] completedMessage = new Messages.CompletedMessageHandler().toByteArray();
+			broadcastToClients(completedMessage);
+			braodcastToServers(completedMessage);
+		} catch (Exception e) {
+			System.err.println("Error broadcasting COMPLETED message: " + e);
+		}
+	}
+
+	public void onDownloadComplete() {
+		notifyCompletionToAll();
+		checkAndTerminate();
 	}
 
 	private void addInterestedPieces(int peerId, int pieceIndex) {
@@ -254,7 +352,7 @@ public class PeerNode {
 		}
 	}
 
-	private boolean hasCompleteFile() {
+	public boolean hasCompleteFile() {
 		return this.fileManager.getNoOfMissingPeices() == 0;
 	}
 
@@ -306,7 +404,11 @@ public class PeerNode {
 
 			for (Integer peerId : currentlyUnchoked) {
 				if (!newPreferredNeighbors.contains(peerId)) {
-					sendChokeMessage(peerId);
+					synchronized (optimisticLock) {
+						if (optimisticallyUnchokedPeer == null || !optimisticallyUnchokedPeer.equals(peerId)) {
+							sendChokeMessage(peerId);
+						}
+					}
 				}
 			}
 
@@ -315,6 +417,45 @@ public class PeerNode {
 		}
 
 		Logger.logPreferredNeighbors(peer.getPeerId(), new ArrayList<>(newPreferredNeighbors));
+	}
+
+	private void selectOptimisticUnchokedNeighbor() {
+		synchronized (optimisticLock) {
+			Set<Integer> allConnectedPeers = new HashSet<>();
+			allConnectedPeers.addAll(this.connectedToAsClient);
+			allConnectedPeers.addAll(this.connectedToAsServer);
+
+			List<Integer> candidates = new ArrayList<>();
+			synchronized (currentlyUnchoked) {
+				for (Integer peerId : allConnectedPeers) {
+					Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+					if (neighbour != null && neighbour.isInterestedInMe() && !currentlyUnchoked.contains(peerId)) {
+						candidates.add(peerId);
+					}
+				}
+			}
+
+			if (candidates.isEmpty()) {
+				optimisticallyUnchokedPeer = null;
+				return;
+			}
+
+			Collections.shuffle(candidates);
+			Integer newOptimisticPeer = candidates.get(0);
+
+			if (optimisticallyUnchokedPeer != null && !optimisticallyUnchokedPeer.equals(newOptimisticPeer)) {
+				synchronized (currentlyUnchoked) {
+					if (!currentlyUnchoked.contains(optimisticallyUnchokedPeer)) {
+						sendChokeMessage(optimisticallyUnchokedPeer);
+					}
+				}
+			}
+
+			sendUnchokeMessage(newOptimisticPeer);
+			optimisticallyUnchokedPeer = newOptimisticPeer;
+
+			Logger.logOptimisticallyUnchokedNeighbor(peer.getPeerId(), newOptimisticPeer);
+		}
 	}
 
 	private void sendUnchokeMessage(int peerId) {
@@ -333,5 +474,67 @@ public class PeerNode {
 		if (connectedToAsServer.contains(peerId)) {
 			server.sendChokeToClient(peerId);
 		}
+	}
+
+	private boolean checkAllPeersComplete() {
+		if (!hasCompleteFile()) {
+			return false;
+		}
+
+		Set<Integer> allConnectedPeers = new HashSet<>();
+		allConnectedPeers.addAll(this.connectedToAsClient);
+		allConnectedPeers.addAll(this.connectedToAsServer);
+
+		for (Integer peerId : allConnectedPeers) {
+			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
+			if (neighbour == null || !neighbour.hasCompletedFile()) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	public void checkAndTerminate() {
+		if (checkAllPeersComplete()) {
+			terminateGracefully();
+		}
+	}
+
+	private void terminateGracefully() {
+		if (isTerminating) {
+			return;
+		}
+		isTerminating = true;
+
+		try {
+			Thread.sleep(500);
+		} catch (InterruptedException e) {
+			// Ignore
+		}
+
+		if (preferredNeighborScheduler != null && !preferredNeighborScheduler.isShutdown()) {
+			preferredNeighborScheduler.shutdownNow();
+		}
+		if (optimisticScheduler != null && !optimisticScheduler.isShutdown()) {
+			optimisticScheduler.shutdownNow();
+		}
+
+		clientManager.shutdown();
+		server.shutdown();
+	}
+
+	public void startSchedulers(int preferredInterval, int optimisticInterval) {
+		preferredNeighborScheduler.scheduleAtFixedRate(
+				selectPreferedNeighbours(),
+				0,
+				preferredInterval,
+				java.util.concurrent.TimeUnit.SECONDS);
+
+		optimisticScheduler.scheduleAtFixedRate(
+				selectOptimisticNeighbor(),
+				0,
+				optimisticInterval,
+				java.util.concurrent.TimeUnit.SECONDS);
 	}
 }

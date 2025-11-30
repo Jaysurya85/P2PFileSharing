@@ -20,6 +20,7 @@ class ClientListener implements Runnable {
 	private PeerNode peerNode;
 	private int serverPeerId;
 	private int clientPeerId;
+	private volatile boolean isRunning = true;
 
 	public ClientListener(InputStream in, OutputStream out, PeerNode peerNode, int serverPeerId, int clientPeerId) {
 		this.in = in;
@@ -32,12 +33,10 @@ class ClientListener implements Runnable {
 	public void clientMessageHandler(int type, byte[] payload) throws Exception {
 		switch (type) {
 			case 0: // Choke
-				// ChokeMessageHandler serverChokeHandler = new ChokeMessageHandler();
 				Logger.logChoked(this.clientPeerId, this.serverPeerId);
 				break;
 
 			case 1: // Unchoke
-				// UnChokeMessageHandler serverUnchokeHandler = new UnChokeMessageHandler();
 				Logger.logUnchoked(this.clientPeerId, this.serverPeerId);
 
 				int interestedPiece = peerNode.getInterestedPiece(this.serverPeerId);
@@ -47,16 +46,12 @@ class ClientListener implements Runnable {
 				break;
 
 			case 2: // Interested
-				// InterestedMessageHandler serverInterestedMessage = new
-				// InterestedMessageHandler();
 				Logger.logReceivingInterested(this.clientPeerId, this.serverPeerId);
 				this.peerNode.setPeerInterested(this.serverPeerId);
 				MessageUtils.sendUnChoke(this.out);
 				break;
 
 			case 3: // Not Interested
-				// NotInterestedMessageHandler serverNotInterestedMessage = new
-				// NotInterestedMessageHandler();
 				Logger.logReceivingNotInterested(this.clientPeerId, this.serverPeerId);
 				this.peerNode.setPeerNotInterested(this.serverPeerId);
 				break;
@@ -95,8 +90,10 @@ class ClientListener implements Runnable {
 				int currentPieceCount = fm.getTotalPieces() - fm.getNoOfMissingPeices();
 				Logger.logDownloadingPiece(this.clientPeerId, this.serverPeerId, pieceIndex, currentPieceCount);
 
+				// Check if download is complete
 				if (fm.getNoOfMissingPeices() == 0) {
 					Logger.logDownloadComplete(this.clientPeerId);
+					this.peerNode.onDownloadComplete();
 				}
 
 				this.peerNode.setBit(serverPeerId, pieceIndex);
@@ -110,6 +107,12 @@ class ClientListener implements Runnable {
 				if (interestedPiece >= 0) {
 					MessageUtils.sendRequest(interestedPiece, out);
 				}
+				break;
+
+			case 8: // NEW: COMPLETED message
+				CompletedMessageHandler completedMessage = CompletedMessageHandler.fromByteArray();
+				// System.out.println("Peer " + this.serverPeerId + " has COMPLETED file");
+				this.peerNode.setPeerCompleted(this.serverPeerId);
 				break;
 
 			default:
@@ -130,7 +133,7 @@ class ClientListener implements Runnable {
 	@Override
 	public void run() {
 		try {
-			while (true) {
+			while (isRunning) {
 				byte[] lengthBytes = new byte[4];
 				readFully(in, lengthBytes, 0, 4);
 				int length = ByteBuffer.wrap(lengthBytes).getInt();
@@ -149,8 +152,14 @@ class ClientListener implements Runnable {
 				clientMessageHandler(typeBytes[0], payload);
 			}
 		} catch (Exception e) {
-			System.out.println("Error reading from server: " + e);
+			// Connection closed or error - normal during shutdown
 		}
+		// System.out.println("ClientListener for server " + serverPeerId + " thread
+		// exiting");
+	}
+
+	public void stop() {
+		isRunning = false;
 	}
 }
 
@@ -159,12 +168,14 @@ public class ClientManager {
 	private Peer peer;
 	private HandshakeInfo serverHandshakeInfo;
 	private HashMap<Integer, Socket> connections;
+	private HashMap<Integer, ClientListener> listeners;
 
 	public ClientManager(PeerNode peerNode) {
 		this.peerNode = peerNode;
 		this.peer = peerNode.getPeer();
 		this.serverHandshakeInfo = new HandshakeInfo();
 		this.connections = new HashMap<>();
+		this.listeners = new HashMap<>();
 	}
 
 	public boolean doHandshake(InputStream in, OutputStream out) throws Exception {
@@ -172,6 +183,7 @@ public class ClientManager {
 		byte[] handshakeMessage = message.buildHandshake(this.peer.getPeerId());
 		byte[] serverHandshakeBuffer = new byte[32];
 		out.write(handshakeMessage);
+		out.flush();
 		in.read(serverHandshakeBuffer);
 		this.serverHandshakeInfo = message.parseHandshake(serverHandshakeBuffer);
 		boolean isHandshakeDone = message.verifyHeader(this.serverHandshakeInfo.getHeader());
@@ -184,7 +196,9 @@ public class ClientManager {
 			try {
 				OutputStream out = socket.getOutputStream();
 				out.write(havePayload);
+				out.flush(); // NEW: Force flush
 			} catch (Exception ex) {
+				// Connection may be closed
 			}
 		}
 	}
@@ -196,7 +210,7 @@ public class ClientManager {
 				OutputStream out = socket.getOutputStream();
 				MessageUtils.sendChoke(out);
 			} catch (Exception ex) {
-				System.out.println("[CLIENT] Error sending CHOKE to server " + peerId + ": " + ex);
+				// Connection may be closed
 			}
 		}
 	}
@@ -208,7 +222,7 @@ public class ClientManager {
 				OutputStream out = socket.getOutputStream();
 				MessageUtils.sendUnChoke(out);
 			} catch (Exception ex) {
-				System.out.println("[CLIENT] Error sending UNCHOKE to server " + peerId + ": " + ex);
+				// Connection may be closed
 			}
 		}
 	}
@@ -216,10 +230,11 @@ public class ClientManager {
 	private void sendBitfield(OutputStream out) throws Exception {
 		BitfieldMessageHandler bitfieldMessage = new BitfieldMessageHandler(this.peerNode.getBitfield());
 		out.write(bitfieldMessage.toByteArray());
+		out.flush();
 	}
 
 	public Thread connect(int serverPort, int serverPeerId, String serverHost) {
-		return new Thread(() -> {
+		Thread thread = new Thread(() -> {
 			try {
 				Socket socket = new Socket(serverHost, serverPort);
 				connections.put(serverPeerId, socket);
@@ -229,16 +244,43 @@ public class ClientManager {
 				boolean isHandshakeDone = doHandshake(in, out);
 				if (!isHandshakeDone) {
 					out.write("exit".getBytes());
+					socket.close();
+					return;
 				}
 				Logger.logTCPConnectionTo(this.peer.getPeerId(), serverPeerId);
 
-				Thread listenerThread = new Thread(
-						new ClientListener(in, out, peerNode, serverPeerId, this.peer.getPeerId()));
+				ClientListener listener = new ClientListener(in, out, peerNode, serverPeerId, this.peer.getPeerId());
+				listeners.put(serverPeerId, listener);
+				Thread listenerThread = new Thread(listener);
+				listenerThread.setDaemon(true);
 				listenerThread.start();
+
 				sendBitfield(out);
 			} catch (Exception ex) {
-				System.out.println("Exception while creating client: " + ex);
+				// Connection failed
 			}
 		});
+		thread.setDaemon(true); // NEW: Make daemon so JVM can exit
+		return thread;
+	}
+
+	public void shutdown() {
+		// Stop all listeners
+		for (ClientListener listener : listeners.values()) {
+			listener.stop();
+		}
+		listeners.clear();
+
+		// Close all connections
+		for (Socket socket : connections.values()) {
+			try {
+				if (socket != null && !socket.isClosed()) {
+					socket.close();
+				}
+			} catch (IOException e) {
+				// Ignore
+			}
+		}
+		connections.clear();
 	}
 }
