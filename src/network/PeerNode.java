@@ -1,5 +1,6 @@
 package network;
 
+import java.sql.Time;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -75,7 +76,7 @@ public class PeerNode {
 			fillBitfield(noOfPieces);
 			this.fileManager.breakFileIntoPeices();
 			this.fileManager.setNoOfMissingPeices(0);
-			this.startedWithCompleteFile = true; // NEW: Mark that we started with file
+			this.startedWithCompleteFile = true;
 		} else {
 			Arrays.fill(this.bitfield, (byte) 0);
 			this.fileManager.setNoOfMissingPeices(noOfPieces);
@@ -110,10 +111,7 @@ public class PeerNode {
 			this.otherPeerBitfield.put(peerId, new Neighbour(otherPeerBitfield, peerId));
 		}
 
-		// NEW: Check if the OTHER peer has complete file from their bitfield
 		if (checkPeerHasCompleteFile(otherPeerBitfield)) {
-			// The peer we just connected to has complete file
-			// Mark them as completed immediately
 			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
 			if (neighbour != null) {
 				neighbour.setHasCompletedFile(true);
@@ -129,8 +127,8 @@ public class PeerNode {
 			val = (byte) (val | (1 << bitIndex));
 			this.bitfield[byteIndex] = val;
 		}
-		removeInterestedPieces(peerId, pieceIndex);
-		this.requestedPeices.remove(pieceIndex);
+
+		removeInterestedPiecesFromAll(pieceIndex);
 	}
 
 	public void setOtherPeerBit(int peerId, int pieceIndex) {
@@ -209,6 +207,7 @@ public class PeerNode {
 		bytesDownloaded.merge(peerId, bytes, Integer::sum);
 	}
 
+	// FIXED: Use atomic add() instead of check-then-act pattern
 	public int getInterestedPiece(int peerId) {
 		synchronized (pieceLock) {
 			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
@@ -217,12 +216,15 @@ public class PeerNode {
 			List<Integer> pieces = neighbour.getInterestingPieces();
 			int ind = pieces.size() - 1;
 			while (ind >= 0) {
-				if (this.requestedPeices.contains(pieces.get(ind))) {
-					ind--;
-				} else {
-					this.requestedPeices.add(pieces.get(ind));
-					return pieces.get(ind);
+				int piece = pieces.get(ind);
+				// CRITICAL FIX: Use add() which returns false if already present
+				// This is atomic - if add() returns true, we got it, else skip
+				if (this.requestedPeices.add(piece)) {
+					// Successfully added - this piece is now ours
+					return piece;
 				}
+				// Piece was already requested by another thread, try next
+				ind--;
 			}
 			return -1;
 		}
@@ -328,12 +330,15 @@ public class PeerNode {
 		}
 	}
 
-	private void removeInterestedPieces(int peerId, int pieceIndex) {
+	// NEW: Remove piece from ALL peers' interesting pieces lists
+	private void removeInterestedPiecesFromAll(int pieceIndex) {
 		synchronized (pieceLock) {
-			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
-			if (neighbour != null) {
+			// Remove from all neighbors' interesting pieces lists
+			for (Neighbour neighbour : otherPeerBitfield.values()) {
 				neighbour.removeInterestingPieces(pieceIndex);
 			}
+			// CRITICAL: Also remove from requested set in SAME critical section
+			this.requestedPeices.remove(pieceIndex);
 		}
 	}
 

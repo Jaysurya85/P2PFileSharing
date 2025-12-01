@@ -66,6 +66,9 @@ class ClientListener implements Runnable {
 				BitfieldMessageHandler serverBitfieldMessage = BitfieldMessageHandler.fromByteArray(payload);
 				this.peerNode.setOtherPeerBitfield(serverPeerId, serverBitfieldMessage.getPayload());
 				boolean isInterested = this.peerNode.setInterestedPieces(serverPeerId, payload);
+				if (this.peerNode.hasCompleteFile()) {
+					MessageUtils.sendCompleted(this.out);
+				}
 				MessageUtils.sendInterestedOrNot(isInterested, this.out);
 				break;
 
@@ -83,6 +86,10 @@ class ClientListener implements Runnable {
 				byte[] pieceData = clientPieceMessage.getPieceData();
 
 				fm = this.peerNode.getFileManager();
+
+				this.peerNode.setBit(serverPeerId, pieceIndex);
+
+				// Now store the piece
 				fm.setPeice(pieceIndex, pieceData);
 
 				this.peerNode.recordBytesDownloaded(this.serverPeerId, pieceData.length);
@@ -96,7 +103,6 @@ class ClientListener implements Runnable {
 					this.peerNode.onDownloadComplete();
 				}
 
-				this.peerNode.setBit(serverPeerId, pieceIndex);
 				HaveMessageHandler haveMessage = new HaveMessageHandler(pieceIndex);
 				byte[] havePayload = haveMessage.toByteArray();
 
@@ -110,8 +116,8 @@ class ClientListener implements Runnable {
 				break;
 
 			case 8: // NEW: COMPLETED message
-				CompletedMessageHandler completedMessage = CompletedMessageHandler.fromByteArray();
-				// System.out.println("Peer " + this.serverPeerId + " has COMPLETED file");
+				// CompletedMessageHandler completedMessage =
+				// CompletedMessageHandler.fromByteArray();
 				this.peerNode.setPeerCompleted(this.serverPeerId);
 				break;
 

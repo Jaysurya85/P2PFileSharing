@@ -23,17 +23,16 @@ public class FileManager {
 		this.pieceSize = pieceSize;
 		this.noOfPieces = noOfPieces;
 		this.filePath = "../project_config_file_large/" + String.valueOf(peerId) + "/" + fileName;
-		this.pieces = new byte[noOfPieces][pieceSize];
+		this.pieces = new byte[noOfPieces][];
 	}
 
 	public void breakFileIntoPeices() {
 		try {
-			// System.out.println("filepath is " + this.filePath);
 			byte[] bytes = Files.readAllBytes(Paths.get(this.filePath));
 			int start = 0;
 			int ind = 0;
 			while (start < bytes.length) {
-				int end = start + Math.min(this.pieceSize, bytes.length);
+				int end = Math.min(start + this.pieceSize, bytes.length);
 				pieces[ind] = Arrays.copyOfRange(bytes, start, end);
 				ind++;
 				start = end;
@@ -52,6 +51,10 @@ public class FileManager {
 	}
 
 	public void setPeice(int pieceIndex, byte[] piece) {
+		if (this.pieces[pieceIndex] != null && this.pieces[pieceIndex].length > 0) {
+			return;
+		}
+
 		this.pieces[pieceIndex] = piece;
 		this.noOfMissingPeices = this.noOfMissingPeices - 1;
 		if (this.noOfMissingPeices == 0) {

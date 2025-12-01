@@ -15,15 +15,16 @@ public class ConfigParser {
 		try {
 			FileInputStream fs = new FileInputStream(configFilePath);
 			props.load(fs);
-			int k = Integer.parseInt(props.getProperty("NumberOfPreferredNeighbors"));
-			int m = Integer.parseInt(props.getProperty("UnchokingInterval"));
-			int n = Integer.parseInt(props.getProperty("OptimisticUnchokingInterval"));
+			int NumberOfPreferredNeighbors = Integer.parseInt(props.getProperty("NumberOfPreferredNeighbors"));
+			int UnchokingInterval = Integer.parseInt(props.getProperty("UnchokingInterval"));
+			int OptimisticUnchokingInterval = Integer.parseInt(props.getProperty("OptimisticUnchokingInterval"));
 			String fileName = props.getProperty("FileName");
 			long fileSize = Long.parseLong(props.getProperty("FileSize"));
 			int pieceSize = Integer.parseInt(props.getProperty("PieceSize"));
 
 			fs.close();
-			return new Common(m, k, n, fileName, fileSize, pieceSize);
+			return new Common(NumberOfPreferredNeighbors, UnchokingInterval, OptimisticUnchokingInterval, fileName,
+					fileSize, pieceSize);
 		} catch (Exception ex) {
 			System.err.println("Error reading Common.cfg: " + ex.toString());
 		}

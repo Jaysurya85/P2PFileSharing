@@ -95,6 +95,9 @@ class ClientHandler implements Runnable {
 				pieceIndex = clientPieceMessage.getPieceIndex();
 				byte[] pieceData = clientPieceMessage.getPieceData();
 				fm = this.peerNode.getFileManager();
+
+				this.peerNode.setBit(this.clientHandshakeInfo.getPeerId(), pieceIndex);
+
 				fm.setPeice(pieceIndex, pieceData);
 
 				this.peerNode.recordBytesDownloaded(this.clientHandshakeInfo.getPeerId(), pieceData.length);
@@ -103,14 +106,11 @@ class ClientHandler implements Runnable {
 				Logger.logDownloadingPiece(this.serverPeerId, this.clientHandshakeInfo.getPeerId(),
 						pieceIndex, currentPieceCount);
 
-				// Check if download is complete
 				if (fm.getNoOfMissingPeices() == 0) {
 					Logger.logDownloadComplete(this.serverPeerId);
-					// NEW: Notify all peers of completion
 					this.peerNode.onDownloadComplete();
 				}
 
-				this.peerNode.setBit(this.clientHandshakeInfo.getPeerId(), pieceIndex);
 				HaveMessageHandler haveMessage = new HaveMessageHandler(pieceIndex);
 				byte[] havePayload = haveMessage.toByteArray();
 
