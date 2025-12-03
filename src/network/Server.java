@@ -53,7 +53,6 @@ class ClientHandler implements Runnable {
 			case 2: // Interested
 				Logger.logReceivingInterested(this.serverPeerId, this.clientHandshakeInfo.getPeerId());
 				this.peerNode.setPeerInterested(this.clientHandshakeInfo.getPeerId());
-				MessageUtils.sendUnChoke(this.out);
 				break;
 
 			case 3: // Not Interested

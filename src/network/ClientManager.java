@@ -48,7 +48,6 @@ class ClientListener implements Runnable {
 			case 2: // Interested
 				Logger.logReceivingInterested(this.clientPeerId, this.serverPeerId);
 				this.peerNode.setPeerInterested(this.serverPeerId);
-				MessageUtils.sendUnChoke(this.out);
 				break;
 
 			case 3: // Not Interested

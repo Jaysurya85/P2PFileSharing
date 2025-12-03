@@ -72,10 +72,9 @@ public class Logger {
 
 	// Receiving 'have' message
 	public static void logReceivingHave(int peerId1, int peerId2, int pieceIndex) {
-		// String message = "[" + getCurrentTime() + "]: Peer [" + peerId1 + "] received
-		// the 'have' message from ["
-		// + peerId2 + "] for the piece [" + pieceIndex + "].";
-		// writeLog(peerId1, message);
+		String message = "[" + getCurrentTime() + "]: Peer [" + peerId1 + "] received the 'have' message from ["
+				+ peerId2 + "] for the piece [" + pieceIndex + "].";
+		writeLog(peerId1, message);
 	}
 
 	// Receiving 'interested' message
