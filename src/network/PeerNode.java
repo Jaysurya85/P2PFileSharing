@@ -46,7 +46,6 @@ public class PeerNode {
 
 	private volatile boolean isTerminating = false;
 	private volatile boolean hasNotifiedCompletion = false;
-	private boolean startedWithCompleteFile; // NEW: Track if we started with file
 
 	public PeerNode(Peer peer, FileManager fileManager, int noOfPieces, int numberOfPreferredNeighbors) {
 		int bytefieldLength = Math.ceilDiv(noOfPieces, 8);
@@ -76,11 +75,9 @@ public class PeerNode {
 			fillBitfield(noOfPieces);
 			this.fileManager.breakFileIntoPeices();
 			this.fileManager.setNoOfMissingPeices(0);
-			this.startedWithCompleteFile = true;
 		} else {
 			Arrays.fill(this.bitfield, (byte) 0);
 			this.fileManager.setNoOfMissingPeices(noOfPieces);
-			this.startedWithCompleteFile = false; // NEW: We need to download
 		}
 	}
 
@@ -102,8 +99,8 @@ public class PeerNode {
 		Neighbour neighbour = this.otherPeerBitfield.get(peerId);
 		if (neighbour != null) {
 			neighbour.setHasCompletedFile(true);
-			checkAndTerminate();
 		}
+		checkAndTerminate();
 	}
 
 	public void setOtherPeerBitfield(int peerId, byte[] otherPeerBitfield) {
@@ -492,11 +489,20 @@ public class PeerNode {
 
 		for (Integer peerId : allConnectedPeers) {
 			Neighbour neighbour = this.otherPeerBitfield.get(peerId);
-			if (neighbour == null || !neighbour.hasCompletedFile()) {
+
+			if (neighbour == null) {
 				return false;
 			}
-		}
 
+			if (!neighbour.hasCompletedFile()) {
+				byte[] bf = neighbour.getBitfield();
+				if (bf == null || !checkPeerHasCompleteFile(bf)) {
+					return false;
+				} else {
+					neighbour.setHasCompletedFile(true);
+				}
+			}
+		}
 		return true;
 	}
 
@@ -511,12 +517,6 @@ public class PeerNode {
 			return;
 		}
 		isTerminating = true;
-
-		try {
-			Thread.sleep(500);
-		} catch (InterruptedException e) {
-			// Ignore
-		}
 
 		if (preferredNeighborScheduler != null && !preferredNeighborScheduler.isShutdown()) {
 			preferredNeighborScheduler.shutdownNow();

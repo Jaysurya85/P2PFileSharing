@@ -1,5 +1,6 @@
 package utils;
 
+import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -10,6 +11,7 @@ public class FileManager {
 	int peerId;
 	String fileName;
 	String filePath;
+	String outFilePath;
 	long fileSize;
 	int pieceSize;
 	int noOfPieces;
@@ -23,6 +25,7 @@ public class FileManager {
 		this.pieceSize = pieceSize;
 		this.noOfPieces = noOfPieces;
 		this.filePath = "../project_config_file_large/" + String.valueOf(peerId) + "/" + fileName;
+		this.outFilePath = String.valueOf(peerId) + "/" + fileName;
 		this.pieces = new byte[noOfPieces][];
 	}
 
@@ -75,17 +78,27 @@ public class FileManager {
 	}
 
 	private void savePiecesToFile() {
-		try (FileOutputStream fos = new FileOutputStream(this.filePath)) {
-			for (int i = 0; i < this.noOfPieces - 1; i++) {
-				fos.write(pieces[i]);
+		try {
+			File outFile = new File(this.outFilePath);
+
+			File parentDir = outFile.getParentFile();
+			if (parentDir != null && !parentDir.exists()) {
+				parentDir.mkdirs();
 			}
-			int lastByteTrim = (int) (this.fileSize % (long) this.pieceSize);
-			if (lastByteTrim == 0) {
-				fos.write(pieces[this.noOfPieces - 1]);
-			} else {
-				fos.write(pieces[this.noOfPieces - 1], 0, lastByteTrim);
+
+			try (FileOutputStream fos = new FileOutputStream(outFile)) {
+				for (int i = 0; i < this.noOfPieces - 1; i++) {
+					fos.write(pieces[i]);
+				}
+				int lastByteTrim = (int) (this.fileSize % (long) this.pieceSize);
+				if (lastByteTrim == 0) {
+					fos.write(pieces[this.noOfPieces - 1]);
+				} else {
+					fos.write(pieces[this.noOfPieces - 1], 0, lastByteTrim);
+				}
+				fos.flush();
 			}
-			fos.flush();
+
 		} catch (IOException e) {
 			System.err.println("Error saving file: " + e.getMessage());
 			e.printStackTrace();

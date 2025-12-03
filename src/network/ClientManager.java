@@ -66,9 +66,6 @@ class ClientListener implements Runnable {
 				BitfieldMessageHandler serverBitfieldMessage = BitfieldMessageHandler.fromByteArray(payload);
 				this.peerNode.setOtherPeerBitfield(serverPeerId, serverBitfieldMessage.getPayload());
 				boolean isInterested = this.peerNode.setInterestedPieces(serverPeerId, payload);
-				if (this.peerNode.hasCompleteFile()) {
-					MessageUtils.sendCompleted(this.out);
-				}
 				MessageUtils.sendInterestedOrNot(isInterested, this.out);
 				break;
 
@@ -262,6 +259,9 @@ public class ClientManager {
 				listenerThread.start();
 
 				sendBitfield(out);
+				if (peerNode.hasCompleteFile()) {
+					MessageUtils.sendCompleted(out);
+				}
 			} catch (Exception ex) {
 				// Connection failed
 			}
