@@ -4,6 +4,12 @@ A simplified **BitTorrent-like peer-to-peer file sharing system** implemented in
 
 Peers connect to each other using **TCP sockets** and collaboratively download pieces of a file until every peer obtains the complete file.
 
+## Demo
+
+Peers exchanging pieces of a file across the network.
+
+![P2P Demo](demo.gif)
+
 The system implements core BitTorrent mechanisms such as:
 -   Piece-based file distribution
 -   Bitfield exchange
